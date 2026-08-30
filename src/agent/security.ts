@@ -1,10 +1,22 @@
 import "@tanstack/react-start/server-only"
+import { resolve as resolvePath } from "node:path"
+import { mkdirSync } from "node:fs"
 
 /**
  * Diretório isolado onde o agente pode executar comandos
  * Tudo fora disso é bloqueado
+ *
+ * Resolvido para caminho absoluto e criado se necessário: como esse diretório
+ * também é usado como HOME dos comandos executados (git config, gh config,
+ * etc.), um caminho relativo inexistente faria essas ferramentas falharem
+ * silenciosamente ao tentar escrever ali.
  */
-const SAFE_BASE_DIR = process.env.AGENT_BASE_DIR || "./projects"
+const SAFE_BASE_DIR = resolvePath(process.env.AGENT_BASE_DIR || "./projects")
+try {
+  mkdirSync(SAFE_BASE_DIR, { recursive: true })
+} catch {
+  // Ambiente sem permissão de escrita (ex: build-time) — ignora
+}
 
 /**
  * Comandos absolutamente proibidos (destrutivos ou de risco)
@@ -117,9 +129,8 @@ export function logCommandExecution(
 export function isSafePath(filePath: string): boolean {
   try {
     // Resolver caminho relativo
-    const { resolve } = require("path")
-    const fullPath = resolve(SAFE_BASE_DIR, filePath)
-    const basePath = resolve(SAFE_BASE_DIR)
+    const fullPath = resolvePath(SAFE_BASE_DIR, filePath)
+    const basePath = resolvePath(SAFE_BASE_DIR)
 
     // Verificar se está dentro de SAFE_BASE_DIR
     return fullPath.startsWith(basePath)
@@ -128,11 +139,16 @@ export function isSafePath(filePath: string): boolean {
   }
 }
 
+/** Caminho absoluto do diretório isolado onde o agente trabalha. */
+export function getSafeBaseDir(): string {
+  return SAFE_BASE_DIR
+}
+
 /**
  * Configurar variáveis de ambiente para isolamento
  */
 export function getSafeEnv(): Record<string, string> {
-  return {
+  const env: Record<string, string> = {
     // Permitir apenas essencial
     PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
     HOME: SAFE_BASE_DIR,
@@ -150,4 +166,15 @@ export function getSafeEnv(): Record<string, string> {
     // (o agente às vezes precisa instalar ferramentas ausentes em runtime)
     DEBIAN_FRONTEND: "noninteractive",
   }
+
+  // Token do GitHub: repassado apenas para o processo do comando (nunca para
+  // o prompt da IA). O git é configurado para usá-lo automaticamente via
+  // credential rewrite (ver configureGitAuth em exec.server.ts) e o `gh` CLI
+  // lê GH_TOKEN/GITHUB_TOKEN nativamente do ambiente.
+  if (process.env.GITHUB_TOKEN) {
+    env.GITHUB_TOKEN = process.env.GITHUB_TOKEN
+    env.GH_TOKEN = process.env.GITHUB_TOKEN
+  }
+
+  return env
 }

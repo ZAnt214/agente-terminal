@@ -1,5 +1,10 @@
 import "@tanstack/react-start/server-only"
-import { validateCommand, logCommandExecution, getSafeEnv } from "./security"
+import {
+  validateCommand,
+  logCommandExecution,
+  getSafeEnv,
+  getSafeBaseDir,
+} from "./security"
 
 // Detecta o ambiente de execução
 const IS_CLOUDFLARE_WORKERS = typeof (globalThis as any).EdgeRuntime !== "undefined"
@@ -94,19 +99,71 @@ export async function executeCommand(command: string): Promise<string> {
   return executeSimulatedCommand(command)
 }
 
-/**
- * Executa comando real usando child_process.spawn (apenas Node.js)
- * Com isolamento de ambiente e timeouts
- */
 // Instalação de pacotes (apt-get, npm install global, etc.) pode demorar mais
 // que um comando comum, especialmente em containers sem cache de apt.
 const COMMAND_TIMEOUT_MS = 120000
 
+/**
+ * Configura o Git (uma única vez por processo) para autenticar automaticamente
+ * em github.com usando GITHUB_TOKEN, via reescrita de URL. Assim `git clone
+ * https://github.com/...` e `git push` funcionam sem que a IA precise (ou
+ * consiga) manipular o token diretamente nos comandos que ela gera.
+ */
+let gitAuthConfigured = false
+async function ensureGitAuthConfigured(): Promise<void> {
+  if (gitAuthConfigured || !spawn) return
+  const token = process.env.GITHUB_TOKEN
+  if (!token) return
+  gitAuthConfigured = true
+
+  const setupCommands = [
+    `git config --global url."https://x-access-token:${token}@github.com/".insteadOf "https://github.com/"`,
+    `git config --global url."https://x-access-token:${token}@github.com/".insteadOf "git@github.com:"`,
+    `git config --global user.name "dev-console-agent"`,
+    `git config --global user.email "agent@dev-console.local"`,
+    `git config --global init.defaultBranch main`,
+  ]
+
+  for (const cmd of setupCommands) {
+    await new Promise<void>((resolve) => {
+      const child = spawn("sh", ["-c", cmd], {
+        cwd: process.cwd(),
+        timeout: 10000,
+        stdio: ["ignore", "ignore", "ignore"],
+        env: getSafeEnv(),
+      })
+      child.on("close", () => resolve())
+      child.on("error", () => resolve())
+    })
+  }
+}
+
+// Diretório de trabalho atual do agente. Persiste entre comandos (dentro do
+// mesmo processo do servidor) para que um "cd pasta" em um passo continue
+// valendo no próximo — cada comando roda em um spawn novo, então sem isso
+// todo "cd" seria esquecido assim que o comando terminasse.
+let currentDir = getSafeBaseDir()
+
+// Marcador usado para capturar o diretório final após cada comando (via
+// `pwd`), sem depender de parsing frágil de "cd" no texto do comando.
+const CWD_MARKER = "__AGENT_CWD__:"
+
+/**
+ * Executa comando real usando child_process.spawn (apenas Node.js)
+ * Com isolamento de ambiente e timeouts
+ */
 async function executeRealCommand(command: string): Promise<string> {
+  await ensureGitAuthConfigured()
+
+  // Executa o comando dentro do diretório de trabalho atual do agente
+  // (isolado da própria aplicação) e captura o novo cwd ao final, para que
+  // "cd" persista entre passos do agente.
+  const wrapped = `cd "${currentDir}" 2>/dev/null; { ${command}\n}; __ec=$?; printf '\\n${CWD_MARKER}%s\\n' "$(pwd)"; exit $__ec`
+
   return new Promise((resolve) => {
     try {
-      const child = spawn("sh", ["-c", command], {
-        cwd: process.cwd(),
+      const child = spawn("sh", ["-c", wrapped], {
+        cwd: currentDir,
         timeout: COMMAND_TIMEOUT_MS,
         stdio: ["pipe", "pipe", "pipe"],
         env: getSafeEnv(), // Ambiente isolado
@@ -130,8 +187,20 @@ async function executeRealCommand(command: string): Promise<string> {
 
       child.on("close", (code: number) => {
         clearTimeout(timeoutHandle)
+
+        // Extrai o marcador de cwd (sempre no stdout, escrito por printf)
+        // e atualiza o diretório de trabalho para o próximo comando.
+        let cleanStdout = stdout
+        const markerIdx = stdout.lastIndexOf(CWD_MARKER)
+        if (markerIdx !== -1) {
+          const after = stdout.slice(markerIdx + CWD_MARKER.length)
+          const newDir = after.split("\n")[0]?.trim()
+          if (newDir) currentDir = newDir
+          cleanStdout = stdout.slice(0, markerIdx)
+        }
+
         // Devolver stdout + stderr junto
-        const output = (stdout + stderr).trim()
+        const output = (cleanStdout + stderr).trim()
         resolve(output || `(exit code: ${code})`)
       })
 
@@ -139,7 +208,7 @@ async function executeRealCommand(command: string): Promise<string> {
         clearTimeout(timeoutHandle)
         resolve(`erro: ${err.message}`)
       })
-    } catch (err) {
+    } catch {
       // Se spawn falhar completamente, usar fallback simulado
       resolve(executeSimulatedCommand(command))
     }
