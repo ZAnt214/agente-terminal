@@ -117,7 +117,7 @@ export function MessageFeed({ messages, onPickSuggestion }: MessageFeedProps) {
                 )}
 
                 {msg.content && msg.status !== "error" && (
-                  <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-surface px-4 py-3.5">
+                  <div className="rounded-2xl rounded-tl-sm px-4 py-3.5 text-[14px] leading-relaxed text-zinc-200">
                     <Markdown>{msg.content}</Markdown>
                   </div>
                 )}
