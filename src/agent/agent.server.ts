@@ -33,6 +33,50 @@ REGRAS DE OURO:
 const FORMAT_ERROR_MESSAGE =
   "Erro de formato. Responda estritamente no formato JSON solicitado."
 
+/** Prompt que classifica a intenção da mensagem do usuário. */
+const INTENT_SYSTEM_PROMPT = `Você é um classificador de intenção. Analise a mensagem do usuário e responda APENAS com um objeto JSON:
+{ "type": "task" | "ask" | "smalltalk" }
+
+Definições:
+- "task": a mensagem descreve uma tarefa concreta para executar em um terminal (criar/instalar/configurar, listar arquivos, ver versões, rodar build, gerenciar projeto, etc). Ex: "crie um projeto React e instale o Tailwind", "liste os arquivos", "qual a versão do node?" (aqui o usuário quer que você execute 'node -v').
+- "ask": a mensagem é vaga, incompleta, uma pergunta sobre o que você pode fazer, ou um pedido de ajuda/ideias sem uma ação clara. Ex: "me ajuda", "o que você faz?", "quero fazer algo", "me dê ideias".
+- "smalltalk": cumprimento, agradecimento ou assunto fora de escopo. Ex: "oi", "olá", "bom dia", "obrigado".
+
+Regras:
+- Sem verbo de ação claro ou sem objetivo executável → "ask".
+- Cumprimento puro → "smalltalk".
+- Dúvida sobre recursos/capacidades → "ask".
+Responda apenas o JSON, sem texto extra.`
+
+/** Prompt para gerar a resposta amigável quando a mensagem não é uma tarefa. */
+const CONVERSATION_PROMPT = `Você é o "dev·console agent", uma IA que planeja, executa comandos em um terminal, analisa os resultados e se corrige até concluir uma tarefa.
+
+A mensagem do usuário NÃO é uma tarefa concreta para executar no terminal. Responda de forma curta, amigável e em português, em Markdown, seguindo esta estrutura:
+1. Cumprimente ou reconheça a mensagem do usuário (em 1 linha).
+2. Em 1-2 linhas, explique brevemente o que você faz (planejo, executo comandos, analiso resultados e me corrijo até concluir).
+3. Liste 3-5 exemplos de objetivos concretos que o usuário pode me pedir, como lista com marcadores.
+4. Convide o usuário a ser específico sobre o que deseja.
+
+Regras:
+- NÃO use comandos de terminal no texto.
+- NÃO invente capacidades fora do escopo de um terminal/agente de desenvolvimento.
+- Use apenas texto; os cabeçalhos podem usar # para organização.`
+
+/** Resposta padrão usada se a geração por IA falhar. */
+const FALLBACK_REPLY = `## Olá! Eu sou o dev·console agent
+
+Não identifiquei uma tarefa concreta para executar no terminal. Eu **planejo, executo comandos, analiso o resultado e me corrijo** até concluir o objetivo.
+
+### Exemplos do que você pode me pedir
+
+- Crie um projeto React chamado \`meu-app\` e instale o Tailwind
+- Verifique a versão do Node instalada
+- Liste os arquivos do diretório atual
+- Instale o Tailwind CSS no projeto
+- Rode o build e me diga se deu certo
+
+Seja específico sobre o que quer que eu faça e eu executo por você.`
+
 /** Eventos emitidos ao frontend para acompanhar a execução ao vivo. */
 export type AgentEvent =
   | { type: "thought"; text: string; step: number }
@@ -74,6 +118,47 @@ function parseAgentAction(raw: string): AgentAction | null {
   }
 }
 
+type Intent = "task" | "ask" | "smalltalk"
+
+/**
+ * Classifica a intenção da mensagem do usuário. Se a classificação falhar,
+ * assume "task" (mantém o comportamento atual de executar).
+ */
+async function classifyIntent(userGoal: string): Promise<Intent> {
+  const history: AIMessage[] = [
+    { role: "system", content: INTENT_SYSTEM_PROMPT },
+    { role: "user", content: userGoal },
+  ]
+  try {
+    const answer = await askAIWithFallback(history, 0)
+    if (!answer.ok) return "task"
+    const cleaned = answer.text
+      .trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "")
+    const data = JSON.parse(cleaned) as { type?: string }
+    if (data.type === "ask" || data.type === "smalltalk") return data.type
+  } catch {
+    // ignore e assume task
+  }
+  return "task"
+}
+
+/** Gera uma resposta amigável (com sugestões) quando a mensagem não é uma tarefa. */
+async function respondConversational(userGoal: string): Promise<string> {
+  const history: AIMessage[] = [
+    { role: "system", content: CONVERSATION_PROMPT },
+    { role: "user", content: `Mensagem do usuário: ${userGoal}` },
+  ]
+  try {
+    const answer = await askAIWithFallback(history, 0)
+    if (answer.ok && answer.text.trim()) return answer.text.trim()
+  } catch {
+    // usa o fallback abaixo
+  }
+  return FALLBACK_REPLY
+}
+
 /**
  * Loop ReAct: planeja → executa → lê o resultado → corrige → repete.
  *
@@ -91,6 +176,15 @@ export async function runAgentLoop(
     { role: "system", content: AGENT_SYSTEM_PROMPT },
     { role: "user", content: `Objetivo do usuário: ${userGoal}` },
   ]
+
+  // Se a mensagem não é uma tarefa concreta (pergunta, cumprimento, vaga),
+  // respondemos de forma conversacional, sem executar comandos sem sentido.
+  const intent = await classifyIntent(userGoal)
+  if (intent === "ask" || intent === "smalltalk") {
+    const reply = await respondConversational(userGoal)
+    emit({ type: "done", summary: reply })
+    return
+  }
 
   for (let step = 1; step <= MAX_AGENT_STEPS; step++) {
     let answer: AIAnswer
