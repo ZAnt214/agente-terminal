@@ -7,7 +7,10 @@ import {
 } from "#/ai/providers.server.ts"
 
 /** Limite máximo de iterações do loop para evitar loops infinitos. */
-export const MAX_AGENT_STEPS = 10
+export const MAX_AGENT_STEPS = 20
+
+/** Se o agente repetir o mesmo comando essa quantidade de vezes, interrompemos. */
+const MAX_COMMAND_REPEATS = 3
 
 /** Prompt de sistema que força a IA a responder estritamente em JSON. */
 export const AGENT_SYSTEM_PROMPT = `Você é um engenheiro de software autônomo, especializado em desenvolvimento, com acesso a um terminal de comandos.
@@ -222,9 +225,21 @@ export async function runAgentLoop(
     return
   }
 
+  // Proteção contra loops sem progresso real.
+  let lastCommand = ""
+  let commandRepeats = 0
+
   for (let step = 1; step <= MAX_AGENT_STEPS; step++) {
     let answer: AIAnswer
     try {
+      // Perto do fim, incentiva a IA a encerrar se o objetivo já estiver pronto.
+      if (step === MAX_AGENT_STEPS - 1) {
+        history.push({
+          role: "user",
+          content:
+            'ATENÇÃO: você está perto do limite de passos. Se o objetivo já estiver essencialmente cumprido, responda com status "completed" e command null para encerrar agora.',
+        })
+      }
       answer = await askAIWithFallback(history, 0)
     } catch {
       emit({
@@ -261,6 +276,19 @@ export async function runAgentLoop(
     }
 
     if (action.command) {
+      // Detecta repetição do mesmo comando (indício de que está travado).
+      if (action.command === lastCommand) commandRepeats++
+      else commandRepeats = 1
+      lastCommand = action.command
+      if (commandRepeats >= MAX_COMMAND_REPEATS) {
+        emit({
+          type: "error",
+          message:
+            "O agente está repetindo o mesmo comando sem progresso. Interrompi para evitar um loop; reformule o objetivo e tente de novo.",
+        })
+        return
+      }
+
       emit({ type: "command", command: action.command, step })
       const logs = await executeCommand(action.command)
       emit({ type: "log", text: logs })
