@@ -1,0 +1,158 @@
+import "@tanstack/react-start/server-only"
+import { executeCommand } from "#/agent/exec.server.ts"
+import {
+  askAIWithFallback,
+  type AIMessage,
+  type AIAnswer,
+} from "#/ai/providers.server.ts"
+
+/** Limite máximo de iterações do loop para evitar loops infinitos. */
+export const MAX_AGENT_STEPS = 10
+
+/** Prompt de sistema que força a IA a responder estritamente em JSON. */
+export const AGENT_SYSTEM_PROMPT = `Você é um engenheiro de software autônomo com acesso a um terminal de comandos.
+
+Sua missão é concluir o objetivo do usuário passo a passo. Para isso, você planeja o que fazer, executa um comando no terminal, analisa o resultado que lhe é devolvido e repete até o objetivo estar pronto.
+
+REGRAS DE OURO:
+1. Você DEVE responder APENAS com um objeto JSON válido. Nada de texto fora do JSON, sem markdown, sem explicações extras.
+2. A estrutura obrigatória é exatamente esta:
+{
+  "thought": "Seu raciocínio sobre o que fazer agora e por quê",
+  "command": "o comando de terminal a executar (ou null se o trabalho acabou)",
+  "status": "running" | "completed" | "error"
+}
+3. "status" é "running" enquanto houver trabalho a fazer, "completed" quando o objetivo estiver concluído, e "error" apenas se algo não puder ser contornado.
+4. "command" deve ser um único comando shell. Use null somente quando o objetivo estiver concluído (status "completed").
+5. Analise com cuidado o "Resultado do comando" que o sistema lhe devolve a cada passo. Se houver erro, corrija o comando e tente de novo em vez de repetir o mesmo erro.
+6. Trabalhe de forma incremental: cada passo executa UMA ação. Não tente fazer tudo de uma vez.
+7. Quando terminar, devolva status "completed", command null, e um thought resumindo o que foi feito.
+8. Responda em português no campo "thought".`
+
+/** Mensagem injetada quando a IA devolve um texto fora do formato JSON. */
+const FORMAT_ERROR_MESSAGE =
+  "Erro de formato. Responda estritamente no formato JSON solicitado."
+
+/** Eventos emitidos ao frontend para acompanhar a execução ao vivo. */
+export type AgentEvent =
+  | { type: "thought"; text: string; step: number }
+  | { type: "command"; command: string; step: number }
+  | { type: "log"; text: string }
+  | { type: "done"; summary: string }
+  | { type: "error"; message: string }
+
+interface AgentAction {
+  thought: string
+  command: string | null
+  status: "running" | "completed" | "error"
+}
+
+/** Extrai e valida o objeto JSON da resposta da IA, tolerando markdown. */
+function parseAgentAction(raw: string): AgentAction | null {
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+  try {
+    const data = JSON.parse(cleaned) as Partial<AgentAction>
+    if (typeof data !== "object" || data === null) return null
+    return {
+      thought:
+        typeof data.thought === "string"
+          ? data.thought
+          : String(data.thought ?? ""),
+      command: typeof data.command === "string" ? data.command : null,
+      status:
+        data.status === "running" ||
+        data.status === "completed" ||
+        data.status === "error"
+          ? data.status
+          : "running",
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Loop ReAct: planeja → executa → lê o resultado → corrige → repete.
+ *
+ * - Adiciona o objetivo do usuário ao histórico.
+ * - Chama askAIWithFallback com o histórico acumulado.
+ * - Emite o pensamento da IA ao frontend via callback (equivalente ao socket).
+ * - Se houver command, executa e anexa o log ao histórico.
+ * - Encerra em "completed", ou após MAX_AGENT_STEPS, ou quando a IA marca erro.
+ */
+export async function runAgentLoop(
+  userGoal: string,
+  emit: (event: AgentEvent) => void,
+): Promise<void> {
+  const history: AIMessage[] = [
+    { role: "system", content: AGENT_SYSTEM_PROMPT },
+    { role: "user", content: `Objetivo do usuário: ${userGoal}` },
+  ]
+
+  for (let step = 1; step <= MAX_AGENT_STEPS; step++) {
+    let answer: AIAnswer
+    try {
+      answer = await askAIWithFallback(history, 0)
+    } catch {
+      emit({
+        type: "error",
+        message:
+          "Falha na chamada de IA (provavelmente chave ausente ou erro de autenticação).",
+      })
+      return
+    }
+
+    if (!answer.ok) {
+      emit({ type: "error", message: answer.text })
+      return
+    }
+
+    const action = parseAgentAction(answer.text)
+
+    // A IA não respeitou o formato JSON: instruímos e repetimos o passo.
+    if (!action) {
+      history.push({ role: "user", content: FORMAT_ERROR_MESSAGE })
+      continue
+    }
+
+    emit({ type: "thought", text: action.thought, step })
+
+    if (action.status === "completed") {
+      emit({ type: "done", summary: action.thought })
+      return
+    }
+
+    if (action.status === "error") {
+      emit({ type: "error", message: action.thought })
+      return
+    }
+
+    if (action.command) {
+      emit({ type: "command", command: action.command, step })
+      const logs = await executeCommand(action.command)
+      emit({ type: "log", text: logs })
+
+      // Anexa o pensamento como assistant e o resultado como nova mensagem.
+      history.push({ role: "assistant", content: JSON.stringify(action) })
+      history.push({
+        role: "user",
+        content: `Resultado do comando:\n${logs}`,
+      })
+    } else {
+      // command null mas status running: pedimos que a IA decida o que fazer.
+      history.push({
+        role: "user",
+        content:
+          'Você devolveu command null sem marcar status "completed". Se o objetivo acabou, marque "completed". Caso contrário, envie o próximo comando.',
+      })
+    }
+  }
+
+  emit({
+    type: "error",
+    message: `Limite de ${MAX_AGENT_STEPS} passos atingido sem concluir o objetivo.`,
+  })
+}
