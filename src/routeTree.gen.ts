@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as ApiExecRouteImport } from './routes/api/exec'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiSessionsRouteImport } from './routes/api/sessions'
+import { Route as ApiSessionsIdRouteImport } from './routes/api/sessions.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +36,32 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSessionsRoute = ApiSessionsRouteImport.update({
+  id: '/api/sessions',
+  path: '/api/sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSessionsIdRoute = ApiSessionsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiSessionsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/agent': typeof ApiAgentRoute
   '/api/exec': typeof ApiExecRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/sessions': typeof ApiSessionsRouteWithChildren
+  '/api/sessions/$id': typeof ApiSessionsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/agent': typeof ApiAgentRoute
   '/api/exec': typeof ApiExecRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/sessions': typeof ApiSessionsRouteWithChildren
+  '/api/sessions/$id': typeof ApiSessionsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +69,34 @@ export interface FileRoutesById {
   '/api/agent': typeof ApiAgentRoute
   '/api/exec': typeof ApiExecRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/sessions': typeof ApiSessionsRouteWithChildren
+  '/api/sessions/$id': typeof ApiSessionsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/agent' | '/api/exec' | '/api/health'
+  fullPaths:
+    | '/'
+    | '/api/agent'
+    | '/api/exec'
+    | '/api/health'
+    | '/api/sessions'
+    | '/api/sessions/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/agent' | '/api/exec' | '/api/health'
-  id: '__root__' | '/' | '/api/agent' | '/api/exec' | '/api/health'
+  to:
+    | '/'
+    | '/api/agent'
+    | '/api/exec'
+    | '/api/health'
+    | '/api/sessions'
+    | '/api/sessions/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/agent'
+    | '/api/exec'
+    | '/api/health'
+    | '/api/sessions'
+    | '/api/sessions/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +104,7 @@ export interface RootRouteChildren {
   ApiAgentRoute: typeof ApiAgentRoute
   ApiExecRoute: typeof ApiExecRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiSessionsRoute: typeof ApiSessionsRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -99,24 +137,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/sessions': {
+      id: '/api/sessions'
+      path: '/api/sessions'
+      fullPath: '/api/sessions'
+      preLoaderRoute: typeof ApiSessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sessions/$id': {
+      id: '/api/sessions/$id'
+      path: '/$id'
+      fullPath: '/api/sessions/$id'
+      preLoaderRoute: typeof ApiSessionsIdRouteImport
+      parentRoute: typeof ApiSessionsRoute
+    }
   }
 }
+
+interface ApiSessionsRouteChildren {
+  ApiSessionsIdRoute: typeof ApiSessionsIdRoute
+}
+
+const ApiSessionsRouteChildren: ApiSessionsRouteChildren = {
+  ApiSessionsIdRoute: ApiSessionsIdRoute,
+}
+
+const ApiSessionsRouteWithChildren = ApiSessionsRoute._addFileChildren(
+  ApiSessionsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiAgentRoute: ApiAgentRoute,
   ApiExecRoute: ApiExecRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiSessionsRoute: ApiSessionsRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
