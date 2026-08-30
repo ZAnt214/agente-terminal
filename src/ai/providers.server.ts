@@ -1,5 +1,22 @@
 import "@tanstack/react-start/server-only"
-import { env } from "cloudflare:workers"
+
+// Ambiente detectado
+const IS_CLOUDFLARE_WORKERS = typeof (globalThis as any).EdgeRuntime !== "undefined"
+const IS_NODE_JS = typeof process !== "undefined" && (process as any).versions?.node
+
+// Função para obter variáveis de ambiente de forma compatível
+function getEnvVar(key: string): string | undefined {
+  if (IS_CLOUDFLARE_WORKERS) {
+    try {
+      const { env } = require("cloudflare:workers")
+      return env[key as keyof Cloudflare.Env]
+    } catch {
+      return undefined
+    }
+  }
+  // Node.js
+  return process.env[key]
+}
 
 /** Configuração de cada provedor de IA disponível na fila de fallback. */
 export interface AIProviderConfig {
@@ -10,7 +27,7 @@ export interface AIProviderConfig {
   /** Identificador do modelo a ser usado nesse provedor. */
   model: string
   /** Nome da variável de ambiente que guarda a API key. */
-  envKey: keyof Cloudflare.Env
+  envKey: string
 }
 
 /**
@@ -86,7 +103,7 @@ async function callProvider(
   provider: AIProviderConfig,
   messages: AIMessage[],
 ): Promise<string> {
-  const apiKey = env[provider.envKey]
+  const apiKey = getEnvVar(provider.envKey as string)
   if (!apiKey) {
     throw new Error(`[Fallback] Chave "${provider.envKey}" não configurada`)
   }
