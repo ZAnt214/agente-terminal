@@ -1,4 +1,4 @@
-import { ArrowUp, LoaderCircle, Square } from "lucide-react"
+import { ArrowUp, Square } from "lucide-react"
 import { useEffect, useRef } from "react"
 
 interface PromptInputProps {
@@ -16,7 +16,7 @@ export function PromptInput({
   onSend,
   onStop,
   running,
-  placeholder = "Descreva um objetivo para o agente…",
+  placeholder = "Descreva um objetivo…",
 }: PromptInputProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -25,7 +25,7 @@ export function PromptInput({
     const el = ref.current
     if (!el) return
     el.style.height = "auto"
-    el.style.height = Math.min(el.scrollHeight, 180) + "px"
+    el.style.height = Math.min(el.scrollHeight, 160) + "px"
   }, [value])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -38,9 +38,9 @@ export function PromptInput({
   const canSend = value.trim().length > 0 && !running
 
   return (
-    <div className="px-3 pb-4 pt-2 sm:px-5">
-      <div className="mx-auto w-full max-w-3xl">
-        <div className="rounded-2xl border border-white/10 bg-surface shadow-lg shadow-black/40 transition-colors focus-within:border-brand/50 focus-within:ring-2 focus-within:ring-brand/20">
+    <div className="safe-bottom px-3 pb-1.5 pt-1.5">
+      <div className="mx-auto w-full max-w-xl">
+        <div className="flex items-end gap-2 rounded-[22px] border border-white/10 bg-surface py-2 pl-4 pr-2 shadow-xl shadow-black/50 transition-colors focus-within:border-brand/50 focus-within:ring-2 focus-within:ring-brand/20">
           <textarea
             ref={ref}
             rows={1}
@@ -49,45 +49,31 @@ export function PromptInput({
             onKeyDown={onKeyDown}
             placeholder={placeholder}
             spellCheck={false}
-            className="max-h-[180px] w-full resize-none bg-transparent px-4 py-3 text-[14px] leading-relaxed text-zinc-100 placeholder:text-zinc-500 outline-none disabled:opacity-60"
+            className="max-h-[160px] min-w-0 flex-1 resize-none bg-transparent py-2 text-[15px] leading-relaxed text-zinc-100 placeholder:text-zinc-500 outline-none disabled:opacity-60"
           />
-          <div className="flex items-center justify-between px-3 pb-2.5">
-            <p className="px-1 text-[10.5px] text-zinc-600">
-              Enter envia · Shift+Enter nova linha
-            </p>
-            {running ? (
-              <button
-                type="button"
-                onClick={onStop}
-                className="flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-                title="Interromper"
-              >
-                <Square className="size-4 fill-current" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onSend}
-                disabled={!canSend}
-                className="flex size-9 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-md shadow-brand/30 transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
-                title="Enviar"
-                aria-label="Enviar"
-              >
-                <ArrowUp className="size-4" strokeWidth={2.5} />
-              </button>
-            )}
-          </div>
-        </div>
-        <p className="mt-2 flex items-center justify-center gap-1.5 text-[10.5px] text-zinc-600">
-          {running && (
-            <LoaderCircle className="size-3 animate-spin text-brand" />
+          {running ? (
+            <button
+              type="button"
+              onClick={onStop}
+              className="flex size-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+              title="Interromper"
+              aria-label="Interromper"
+            >
+              <Square className="size-4 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={!canSend}
+              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-brand text-brand-foreground shadow-md shadow-brand/30 transition-all hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+              title="Enviar"
+              aria-label="Enviar"
+            >
+              <ArrowUp className="size-5" strokeWidth={2.5} />
+            </button>
           )}
-          <span>
-            {running
-              ? "Agente trabalhando no terminal…"
-              : "O agente executa comandos e se corrige sozinho até concluir."}
-          </span>
-        </p>
+        </div>
       </div>
     </div>
   )

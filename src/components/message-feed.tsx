@@ -1,4 +1,4 @@
-import { Sparkles, User as UserIcon } from "lucide-react"
+import { Sparkles } from "lucide-react"
 import { useEffect, useRef } from "react"
 
 import { ActionCard } from "#/components/action-card.tsx"
@@ -44,38 +44,34 @@ export function MessageFeed({ messages, onPickSuggestion }: MessageFeedProps) {
   const onScroll = () => {
     const el = scrollRef.current
     if (!el) return
-    atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 40
+    atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 60
   }
 
   if (messages.length === 0) {
     return (
-      <div className="flex min-h-full flex-col items-center justify-center px-4 py-10 text-center">
-        <div className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand to-cyan-400 text-brand-foreground shadow-lg shadow-brand/20">
-          <Sparkles className="size-7" strokeWidth={2.2} />
+      <div className="flex min-h-full flex-col items-center justify-center px-5 pb-6 pt-10 text-center">
+        <div className="flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-brand to-cyan-400 text-brand-foreground shadow-lg shadow-brand/25">
+          <Sparkles className="size-8" strokeWidth={2.2} />
         </div>
-        <h1 className="mt-5 text-xl font-bold tracking-tight text-zinc-50">
+        <h1 className="mt-5 text-[22px] font-bold tracking-tight text-zinc-50">
           dev·console agent
         </h1>
-        <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-400">
+        <p className="mt-2 max-w-sm text-[14px] leading-relaxed text-zinc-400">
           Descreva um objetivo e o agente planeja, executa comandos no terminal,
-          lê os logs e se corrige até concluir — com fallback de IA em vários
-          provedores.
+          lê os logs e se corrige até concluir.
         </p>
-        <div className="mt-6 flex w-full max-w-xl flex-col gap-2">
+        <div className="mt-7 flex w-full flex-col gap-2.5">
           {SUGGESTIONS.map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => onPickSuggestion(s)}
-              className="rounded-xl border border-white/10 bg-surface px-4 py-3 text-left text-[13px] text-zinc-300 transition-colors hover:border-brand/40 hover:bg-brand/[0.06] hover:text-zinc-100"
+              className="w-full rounded-2xl border border-white/10 bg-surface px-4 py-3.5 text-left text-[14px] leading-snug text-zinc-200 transition-colors hover:border-brand/40 hover:bg-brand/[0.06] hover:text-zinc-50 active:scale-[0.99]"
             >
               {s}
             </button>
           ))}
         </div>
-        <p className="mt-6 text-[11px] text-zinc-600">
-          O agente responde em JSON e mostra cada passo em um card colapsável.
-        </p>
       </div>
     )
   }
@@ -84,27 +80,22 @@ export function MessageFeed({ messages, onPickSuggestion }: MessageFeedProps) {
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className="h-full overflow-y-auto px-3 py-5 sm:px-5 [scrollbar-width:thin]"
+      className="h-full overflow-y-auto px-3.5 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       role="log"
       aria-live="polite"
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-5">
         {messages.map((msg) =>
           msg.role === "user" ? (
             <div key={msg.id} className="flex justify-end">
-              <div className="flex max-w-[85%] items-start gap-2.5">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-zinc-300">
-                  <UserIcon className="size-4" />
-                </div>
-                <div className="rounded-2xl rounded-tr-sm border border-white/10 bg-surface-2 px-3.5 py-2.5 text-[13.5px] leading-relaxed text-zinc-100">
-                  {msg.content}
-                </div>
+              <div className="max-w-[86%] rounded-2xl rounded-tr-sm bg-brand/15 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-50">
+                {msg.content}
               </div>
             </div>
           ) : (
             <div key={msg.id} className="flex items-start gap-2.5">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-cyan-400 text-brand-foreground">
-                <Sparkles className="size-4" strokeWidth={2.4} />
+              <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-cyan-400 text-brand-foreground">
+                <Sparkles className="size-3.5" strokeWidth={2.4} />
               </div>
               <div className="min-w-0 flex-1 space-y-2.5">
                 {msg.steps.map((step) => (

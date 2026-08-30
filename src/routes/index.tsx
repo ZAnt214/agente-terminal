@@ -2,16 +2,17 @@ import { createFileRoute } from "@tanstack/react-router"
 import {
   ArrowUpRight,
   Braces,
-  Download,
+  History,
   Play,
   RotateCw,
+  Sparkles,
   Square,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { MessageFeed, type ChatMessage } from "#/components/message-feed.tsx"
 import { PromptInput } from "#/components/prompt-input.tsx"
-import { Sidebar, SidebarToggle, type Session } from "#/components/sidebar.tsx"
+import { HistorySheet, type Session } from "#/components/sidebar.tsx"
 import { Button } from "#/components/ui/button.tsx"
 
 export const Route = createFileRoute("/")({ component: Home })
@@ -55,8 +56,7 @@ function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [chatRunning, setChatRunning] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [view, setView] = useState<"chat" | "shell">("chat")
   const [chatInput, setChatInput] = useState("")
 
@@ -87,7 +87,7 @@ function Home() {
     ])
     setActiveId(id)
     setView("chat")
-    setMobileOpen(false)
+    setHistoryOpen(false)
   }
 
   // Garante que existe uma conversa ativa, criando uma se necessário.
@@ -401,46 +401,62 @@ function Home() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-[#090b0f] text-zinc-200">
-      <Sidebar
-        sessions={sessions.map(({ messages: _m, ...rest }) => rest)}
-        activeId={activeId}
-        collapsed={collapsed}
-        mobileOpen={mobileOpen}
-        onSelect={setActiveId}
-        onNew={newSession}
-        onDelete={deleteSession}
-        onToggleCollapse={() => setCollapsed((c) => !c)}
-        onCloseMobile={() => setMobileOpen(false)}
-      />
+    <div className="min-h-dvh bg-[#07090c] text-zinc-200">
+      <div className="mx-auto flex h-dvh w-full max-w-[480px] flex-col border-x border-white/5 bg-[#0a0d12] shadow-2xl shadow-black">
+        {/* Topo */}
+        <header className="safe-top shrink-0 border-b border-white/5 bg-[#0a0d12]/95 backdrop-blur">
+          <div className="flex items-center gap-2.5 px-3 pt-2.5">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-cyan-400 text-brand-foreground">
+              <Sparkles className="size-4" strokeWidth={2.4} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-mono text-[13px] font-bold tracking-tight text-zinc-100">
+                dev·console <span className="font-normal text-zinc-500">/</span>{" "}
+                <span className="text-brand">agent</span>
+              </div>
+            </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Cabeçote */}
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b border-white/5 bg-[#0a0d12] px-3 sm:px-5">
-          <SidebarToggle
-            collapsed={collapsed}
-            onToggle={() => setMobileOpen((o) => !o)}
-          />
+            <span
+              className={
+                "flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10.5px] " +
+                (running
+                  ? "border-brand/30 bg-brand/10 text-brand"
+                  : "border-white/10 bg-white/[0.03] text-zinc-400")
+              }
+              title="Conexão com o agente via streaming"
+            >
+              <span
+                className={
+                  "size-1.5 rounded-full " +
+                  (running ? "bg-brand status-dot" : "bg-emerald-400")
+                }
+              />
+              {running ? "executando" : "online"}
+            </span>
 
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate font-mono text-[13px] font-bold tracking-tight text-zinc-100">
-              dev·console <span className="font-normal text-zinc-500">/</span>{" "}
-              <span className="text-brand">agent</span>
-            </h1>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="rounded-xl p-2 text-zinc-300 transition-colors hover:bg-white/5 hover:text-zinc-50"
+              title="Histórico"
+              aria-label="Abrir histórico"
+            >
+              <History className="size-5" />
+            </button>
           </div>
 
           {/* Alternância Chat / Shell */}
           <nav
-            className="flex rounded-lg border border-white/10 bg-black/30 p-0.5"
+            className="mx-3 mt-2.5 grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-black/30 p-1"
             aria-label="Modo"
           >
             <button
               type="button"
               onClick={() => setView("chat")}
               className={
-                "rounded-md px-2.5 py-1.5 font-mono text-[11px] transition-colors " +
+                "rounded-xl py-2.5 text-center font-mono text-[12.5px] font-semibold transition-colors " +
                 (view === "chat"
-                  ? "bg-brand/15 text-brand"
+                  ? "bg-brand text-brand-foreground shadow-md shadow-brand/20"
                   : "text-zinc-500 hover:text-zinc-300")
               }
             >
@@ -450,43 +466,16 @@ function Home() {
               type="button"
               onClick={() => setView("shell")}
               className={
-                "rounded-md px-2.5 py-1.5 font-mono text-[11px] transition-colors " +
+                "rounded-xl py-2.5 text-center font-mono text-[12.5px] font-semibold transition-colors " +
                 (view === "shell"
-                  ? "bg-brand/15 text-brand"
+                  ? "bg-brand text-brand-foreground shadow-md shadow-brand/20"
                   : "text-zinc-500 hover:text-zinc-300")
               }
             >
               Shell
             </button>
           </nav>
-
-          <a
-            href="/agente-terminal.zip"
-            download
-            title="Baixar código-fonte (ZIP)"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 font-mono text-[11px] text-zinc-300 transition-colors hover:border-brand/40 hover:bg-brand/10 hover:text-brand"
-          >
-            <Download className="size-3.5" />
-            <span className="hidden sm:inline">Código (ZIP)</span>
-          </a>
-
-          <span
-            className={
-              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] " +
-              (running
-                ? "border-brand/30 bg-brand/10 text-brand"
-                : "border-white/10 bg-white/[0.03] text-zinc-400")
-            }
-            title="Conexão com o agente via streaming"
-          >
-            <span
-              className={
-                "size-1.5 rounded-full " +
-                (running ? "bg-brand status-dot" : "bg-emerald-400")
-              }
-            />
-            {running ? "executando" : "online"}
-          </span>
+          <div className="h-2.5" />
         </header>
 
         {/* Conteúdo */}
@@ -509,11 +498,11 @@ function Home() {
             </>
           ) : (
             <>
-              <div className="min-h-0 flex-1 px-3 py-3 sm:px-5">
+              <div className="min-h-0 flex-1 px-3 pb-2 pt-2">
                 <div
                   ref={shellLogRef}
                   onScroll={onShellScroll}
-                  className="h-full overflow-y-auto rounded-xl border border-white/10 bg-black/50 p-4 font-mono text-[13px] leading-relaxed shadow-inner shadow-black/60"
+                  className="h-full overflow-y-auto rounded-2xl border border-white/10 bg-black/50 p-4 font-mono text-[12.5px] leading-relaxed shadow-inner shadow-black/60"
                   role="log"
                   aria-label="Saída do terminal"
                 >
@@ -542,7 +531,7 @@ function Home() {
                 </div>
               </div>
 
-              <div className="px-3 pb-2 sm:px-5">
+              <div className="px-3 pb-2">
                 <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
                   {SHELL_PRESETS.map((p) => (
                     <button
@@ -550,7 +539,7 @@ function Home() {
                       type="button"
                       onClick={() => void runShell(p)}
                       disabled={shellRunning}
-                      className="shrink-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 font-mono text-xs text-zinc-300 transition-colors hover:border-brand/40 hover:bg-brand/10 hover:text-brand disabled:opacity-40"
+                      className="shrink-0 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2 font-mono text-xs text-zinc-300 transition-colors hover:border-brand/40 hover:bg-brand/10 hover:text-brand disabled:opacity-40"
                     >
                       {p}
                     </button>
@@ -558,7 +547,7 @@ function Home() {
                 </div>
               </div>
 
-              <footer className="border-t border-white/5 bg-[#0a0d12] px-3 py-3 sm:px-5">
+              <footer className="safe-bottom border-t border-white/5 bg-[#0a0d12] px-3 pt-2.5">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault()
@@ -577,7 +566,7 @@ function Home() {
                     placeholder="digite um comando…"
                     spellCheck={false}
                     autoComplete="off"
-                    className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-3 font-mono text-sm text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-brand/50 focus:ring-2 focus:ring-brand/20 disabled:opacity-50"
+                    className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/40 px-3 font-mono text-sm text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-brand/50 focus:ring-2 focus:ring-brand/20 disabled:opacity-50"
                   />
                   {shellRunning ? (
                     <Button
@@ -586,7 +575,7 @@ function Home() {
                       size="icon"
                       onClick={() => abortRef.current?.abort()}
                       title="Interromper"
-                      className="size-10 border-zinc-700 bg-zinc-800/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                      className="size-11 shrink-0 border-zinc-700 bg-zinc-800/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
                     >
                       <Square className="size-4 fill-current" />
                     </Button>
@@ -594,7 +583,7 @@ function Home() {
                     <Button
                       type="submit"
                       size="icon"
-                      className="size-10 bg-brand text-brand-foreground shadow-md shadow-brand/30 hover:brightness-110"
+                      className="size-11 shrink-0 rounded-xl bg-brand text-brand-foreground shadow-md shadow-brand/30 hover:brightness-110"
                       title="Executar"
                     >
                       {shellHistory.length > 0 ? (
@@ -605,14 +594,25 @@ function Home() {
                     </Button>
                   )}
                 </form>
-                <p className="mt-2 flex items-center gap-1 font-mono text-[10px] text-zinc-600">
-                  <ArrowUpRight className="size-3" /> setas ↑↓ para histórico ·
-                  shell de demonstração em tempo real
+                <p className="mt-2 flex items-center justify-center gap-1 pb-0.5 text-center font-mono text-[10px] text-zinc-600">
+                  <ArrowUpRight className="size-3" /> setas ↑↓ histórico · shell
+                  de demonstração em tempo real
                 </p>
               </footer>
             </>
           )}
         </div>
+
+        {/* Gaveta de histórico */}
+        <HistorySheet
+          sessions={sessions.map(({ messages: _m, ...rest }) => rest)}
+          activeId={activeId}
+          open={historyOpen}
+          onSelect={setActiveId}
+          onNew={newSession}
+          onDelete={deleteSession}
+          onClose={() => setHistoryOpen(false)}
+        />
       </div>
     </div>
   )
