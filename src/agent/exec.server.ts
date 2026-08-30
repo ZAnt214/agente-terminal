@@ -98,12 +98,16 @@ export async function executeCommand(command: string): Promise<string> {
  * Executa comando real usando child_process.spawn (apenas Node.js)
  * Com isolamento de ambiente e timeouts
  */
+// Instalação de pacotes (apt-get, npm install global, etc.) pode demorar mais
+// que um comando comum, especialmente em containers sem cache de apt.
+const COMMAND_TIMEOUT_MS = 120000
+
 async function executeRealCommand(command: string): Promise<string> {
   return new Promise((resolve) => {
     try {
       const child = spawn("sh", ["-c", command], {
         cwd: process.cwd(),
-        timeout: 30000, // 30 segundos máximo
+        timeout: COMMAND_TIMEOUT_MS,
         stdio: ["pipe", "pipe", "pipe"],
         env: getSafeEnv(), // Ambiente isolado
       })
@@ -119,10 +123,10 @@ async function executeRealCommand(command: string): Promise<string> {
         stderr += data.toString()
       })
 
-      // Timeout: forçar morte do processo após 30s
+      // Timeout: forçar morte do processo caso passe do limite
       const timeoutHandle = setTimeout(() => {
         child.kill("SIGTERM")
-      }, 30000)
+      }, COMMAND_TIMEOUT_MS)
 
       child.on("close", (code: number) => {
         clearTimeout(timeoutHandle)

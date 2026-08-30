@@ -145,5 +145,9 @@ export function getSafeEnv(): Record<string, string> {
     // Limitar recursos
     BASH_ENV: "/dev/null",
     ENV: "/dev/null",
+
+    // Evita que apt-get/dpkg fiquem esperando confirmação interativa
+    // (o agente às vezes precisa instalar ferramentas ausentes em runtime)
+    DEBIAN_FRONTEND: "noninteractive",
   }
 }
