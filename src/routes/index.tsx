@@ -52,6 +52,20 @@ const SHELL_PRESETS = [
   "date",
 ]
 
+const formatTimeAgo = (timestamp: number) => {
+  const now = Date.now()
+  const diff = now - timestamp
+  const seconds = Math.floor(diff / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days > 0) return `${days}d atrás`
+  if (hours > 0) return `${hours}h atrás`
+  if (minutes > 0) return `${minutes}m atrás`
+  return "agora"
+}
+
 function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
@@ -166,20 +180,6 @@ function Home() {
 
     void loadSessions()
   }, [])
-
-  const formatTimeAgo = (timestamp: number) => {
-    const now = Date.now()
-    const diff = now - timestamp
-    const seconds = Math.floor(diff / 1000)
-    const minutes = Math.floor(seconds / 60)
-    const hours = Math.floor(minutes / 60)
-    const days = Math.floor(hours / 24)
-
-    if (days > 0) return `${days}d atrás`
-    if (hours > 0) return `${hours}h atrás`
-    if (minutes > 0) return `${minutes}m atrás`
-    return "agora"
-  }
 
   const newSession = async () => {
     try {
@@ -316,21 +316,35 @@ function Home() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    try {
-      const res = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal: prompt, history: prior, sessionId: sessId }),
-        signal: controller.signal,
-      })
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+    const handleError = (error: unknown) => {
+      if ((error as Error).name !== "AbortError") {
+        patch((msgs) =>
+          msgs.map((m) =>
+            m.id === aid ? { ...m, content: String(error), status: "error" } : m,
+          ),
+        )
+      }
+      setChatRunning(false)
+      abortRef.current = null
+    }
+
+    const handleStream = async (res: Response) => {
+      if (!res.ok || !res.body) {
+        handleError(new Error(`HTTP ${res.status}`))
+        return
+      }
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ""
+
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          abortRef.current = null
+          break
+        }
+
         buffer += decoder.decode(value, { stream: true })
         let sep
         while ((sep = buffer.indexOf("\n\n")) !== -1) {
@@ -431,18 +445,19 @@ function Home() {
           }
         }
       }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        patch((msgs) =>
-          msgs.map((m) =>
-            m.id === aid ? { ...m, content: String(e), status: "error" } : m,
-          ),
-        )
-      }
-      setChatRunning(false)
-    } finally {
-      abortRef.current = null
     }
+
+    const fetchAndHandle = async () => {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goal: prompt, history: prior, sessionId: sessId }),
+        signal: controller.signal,
+      })
+      await handleStream(res)
+    }
+
+    void fetchAndHandle().catch(handleError)
   }
 
   const stopChat = () => {
@@ -498,25 +513,33 @@ function Home() {
 
     const controller = new AbortController()
     abortRef.current = controller
-    try {
-      const res = await fetch("/api/exec", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command }),
-        signal: controller.signal,
-      })
+
+    const handleShellError = (error: unknown) => {
+      if ((error as Error).name !== "AbortError") addShell("err", String(error))
+      setShellRunning(false)
+      abortRef.current = null
+    }
+
+    const handleShellStream = async (res: Response) => {
       if (!res.ok || !res.body) {
         const msg = (await res.json().catch(() => null)) as { error?: string }
         addShell("err", `error: ${msg?.error ?? `HTTP ${res.status}`}`)
         setShellRunning(false)
+        abortRef.current = null
         return
       }
+
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ""
+
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          abortRef.current = null
+          break
+        }
+
         buffer += decoder.decode(value, { stream: true })
         let sep
         while ((sep = buffer.indexOf("\n\n")) !== -1) {
@@ -536,12 +559,19 @@ function Home() {
           }
         }
       }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") addShell("err", String(e))
-      setShellRunning(false)
-    } finally {
-      abortRef.current = null
     }
+
+    const fetchShellAndHandle = async () => {
+      const res = await fetch("/api/exec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command }),
+        signal: controller.signal,
+      })
+      await handleShellStream(res)
+    }
+
+    void fetchShellAndHandle().catch(handleShellError)
   }
 
   const onShellKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
