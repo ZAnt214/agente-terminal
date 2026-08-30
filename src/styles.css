@@ -99,6 +99,11 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brand: oklch(0.87 0.24 125);
+  --color-brand-strong: oklch(0.93 0.22 125);
+  --color-brand-foreground: oklch(0.2 0.03 125);
+  --color-surface: #10141b;
+  --color-surface-2: #151a22;
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -174,6 +179,22 @@
   .cursor-blink {
     animation: cursor-blink 1.1s steps(2, start) infinite;
   }
+
+  .status-dot {
+    animation: status-dot 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes status-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.72);
+  }
 }
 
 @keyframes cursor-blink {
@@ -190,6 +211,9 @@
 @layer utilities {
   @media (prefers-reduced-motion: reduce) {
     .cursor-blink {
+      animation: none;
+    }
+    .status-dot {
       animation: none;
     }
   }

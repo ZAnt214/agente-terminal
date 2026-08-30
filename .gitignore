@@ -56,6 +56,9 @@ uploads/
 tmp/
 temp/
 
+# Pacote de download do código-fonte (gerado no preview, não vai ao repositório)
+public/agente-terminal.zip
+
 # IDE
 .idea/
 .vscode/
