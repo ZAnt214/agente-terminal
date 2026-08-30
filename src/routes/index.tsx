@@ -79,27 +79,168 @@ function Home() {
 
   const active = sessions.find((s) => s.id === activeId) ?? null
 
-  const newSession = () => {
-    const id = nextSess.current++
-    setSessions((prev) => [
-      { id, title: "", ts: "agora", messages: [] },
-      ...prev,
-    ])
-    setActiveId(id)
+  // Load sessions from database on mount
+  useEffect(() => {
+    const loadSessions = async () => {
+      try {
+        const res = await fetch("/api/sessions")
+        if (!res.ok) return
+        const dbSessions = (await res.json()) as Array<{
+          id: number
+          title: string
+          updatedAt: number
+        }>
+
+        // Load each session with its messages
+        const loadedSessions: ChatSession[] = []
+        for (const session of dbSessions) {
+          try {
+            const detailRes = await fetch(`/api/sessions/${session.id}`)
+            if (!detailRes.ok) continue
+            const detail = (await detailRes.json()) as {
+              id: number
+              title: string
+              messages: Array<{
+                id: number
+                role: string
+                content: string
+                status: string
+                steps: Array<{
+                  id: number
+                  num: number
+                  thought: string
+                  command: string
+                  logs: string
+                  running: number
+                }>
+              }>
+            }
+
+            const messages: ChatMessage[] = detail.messages.map((m) => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              status: (m.status as "idle" | "running" | "done" | "error") || "done",
+              steps: m.steps.map((s) => ({
+                id: s.id,
+                num: s.num,
+                thought: s.thought,
+                command: s.command,
+                logs: s.logs,
+                running: s.running === 1,
+              })),
+            }))
+
+            loadedSessions.push({
+              id: session.id,
+              title: session.title,
+              ts: formatTimeAgo(session.updatedAt),
+              messages,
+            })
+
+            // Update nextSess to avoid ID collisions
+            if (session.id >= nextSess.current) {
+              nextSess.current = session.id + 1
+            }
+
+            // Update nextMsg and nextStep based on loaded messages
+            for (const msg of messages) {
+              if (msg.id >= nextMsg.current) nextMsg.current = msg.id + 1
+              for (const step of msg.steps) {
+                if (step.id >= nextStep.current) nextStep.current = step.id + 1
+              }
+            }
+          } catch {
+            // Skip failed session loads
+          }
+        }
+
+        setSessions(loadedSessions)
+        if (loadedSessions.length > 0) {
+          setActiveId(loadedSessions[0].id)
+        }
+      } catch {
+        // Database not available, start with empty sessions
+      }
+    }
+
+    void loadSessions()
+  }, [])
+
+  const formatTimeAgo = (timestamp: number) => {
+    const now = Date.now()
+    const diff = now - timestamp
+    const seconds = Math.floor(diff / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+
+    if (days > 0) return `${days}d atrás`
+    if (hours > 0) return `${hours}h atrás`
+    if (minutes > 0) return `${minutes}m atrás`
+    return "agora"
+  }
+
+  const newSession = async () => {
+    try {
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "" }),
+      })
+      if (!res.ok) return
+      const session = (await res.json()) as { id: number; title: string; updatedAt: number }
+      setSessions((prev) => [
+        { id: session.id, title: session.title, ts: "agora", messages: [] },
+        ...prev,
+      ])
+      setActiveId(session.id)
+      if (session.id >= nextSess.current) {
+        nextSess.current = session.id + 1
+      }
+    } catch {
+      // Fallback: create session in memory only
+      const id = nextSess.current++
+      setSessions((prev) => [
+        { id, title: "", ts: "agora", messages: [] },
+        ...prev,
+      ])
+      setActiveId(id)
+    }
     setView("chat")
     setHistoryOpen(false)
   }
 
-  // Garante que existe uma conversa ativa, criando uma se necessário.
-  const ensureSession = (): number => {
+  // Garanta que existe uma conversa ativa, criando uma se necessário.
+  const ensureSession = async (): Promise<number> => {
     if (activeId != null) return activeId
-    const id = nextSess.current++
-    setSessions((prev) => [
-      { id, title: "", ts: "agora", messages: [] },
-      ...prev,
-    ])
-    setActiveId(id)
-    return id
+    try {
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "" }),
+      })
+      if (!res.ok) throw new Error("Failed to create session")
+      const session = (await res.json()) as { id: number; title: string }
+      setSessions((prev) => [
+        { id: session.id, title: session.title, ts: "agora", messages: [] },
+        ...prev,
+      ])
+      setActiveId(session.id)
+      if (session.id >= nextSess.current) {
+        nextSess.current = session.id + 1
+      }
+      return session.id
+    } catch {
+      // Fallback: create in memory
+      const id = nextSess.current++
+      setSessions((prev) => [
+        { id, title: "", ts: "agora", messages: [] },
+        ...prev,
+      ])
+      setActiveId(id)
+      return id
+    }
   }
 
   const deleteSession = (id: number) => {
@@ -111,7 +252,7 @@ function Home() {
   const sendGoal = async (raw: string) => {
     const prompt = raw.trim()
     if (!prompt || chatRunning) return
-    const sessId = ensureSession()
+    const sessId = await ensureSession()
 
     const uid = nextMsg.current++
     const aid = nextMsg.current++
@@ -139,6 +280,18 @@ function Home() {
         status: "running",
       },
     ])
+
+    // Update session title in database if empty
+    if (active?.title === "") {
+      void fetch(`/api/sessions/${sessId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: prompt.substring(0, 50) }),
+      }).catch(() => {
+        // Ignore errors
+      })
+    }
+
     setChatInput("")
     setChatRunning(true)
     currentStepRef.current = null
@@ -167,7 +320,7 @@ function Home() {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal: prompt, history: prior }),
+        body: JSON.stringify({ goal: prompt, history: prior, sessionId: sessId }),
         signal: controller.signal,
       })
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)

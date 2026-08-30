@@ -59,36 +59,25 @@ const CONVERSATION_PROMPT = `Você é o "dev·console agent", uma IA que planeja
 Você receberá o HISTÓRICO da conversa atual e a MENSAGEM mais recente do usuário.
 
 SE A MENSAGEM SE REFERE AO QUE JÁ FOI FEITO NESTA CONVERSA (por exemplo: "você fez algo?", "o que você fez?", "o que já foi feito?", "deu certo?", "qual o resultado?"), responda DIRETAMENTE com base no histórico:
-1. Reconheça a pergunta em 1 linha.
-2. Resuma especificamente o que foi feito nesta conversa, citando as ações e comandos reais do histórico. Se nada tiver sido feito, diga isso com clareza.
-3. NÃO liste exemplos genéricos de capacidades nem repita opções de tarefas.
+1. Resuma especificamente o que foi feito nesta conversa, citando as ações e comandos reais do histórico. Se nada tiver sido feito, diga isso com clareza.
+2. NÃO repita opções ou liste capacidades.
 
-SE A MENSAGEM NÃO TIVER RELAÇÃO COM O HISTÓRICO (é sobre o que você pode fazer, pedido de ajuda, ou ideias), responda de forma amigável:
-1. Cumprimente ou reconheça a mensagem (em 1 linha).
-2. Explique brevemente o que você faz (planejo, executo comandos, analiso resultados e me corrijo até concluir).
-3. Liste 3-5 exemplos de objetivos concretos que o usuário pode me pedir, como lista com marcadores.
-4. Convide o usuário a ser específico sobre o que deseja.
+SE A MENSAGEM NÃO TIVER RELAÇÃO COM O HISTÓRICO (é sobre o que você pode fazer, pedido de ajuda, cumprimento ou ideias), responda de forma natural e conversacional:
+1. Reconheça o que o usuário disse.
+2. Explique brevemente o que você faz (executo comandos no terminal, analiso resultados e me corrijo).
+3. Convide o usuário a descrever uma tarefa específica.
 
 Regras:
-- Responda em português, em Markdown, de forma curta.
-- NÃO use comandos de terminal no texto.
+- Responda em português, em TEXTO SIMPLES (sem markdown de títulos/headings).
+- Respostas curtas e diretas, como em uma conversa normal.
+- NÃO liste exemplos ou opções.
 - NÃO invente ações que não constam no histórico.
 - NÃO invente capacidades fora do escopo de um terminal/agente de desenvolvimento.`
 
 /** Resposta padrão usada se a geração por IA falhar. */
-const FALLBACK_REPLY = `## Olá! Eu sou o dev·console agent
+const FALLBACK_REPLY = `Olá! Parece que sua mensagem é mais uma pergunta do que uma tarefa concreta. Eu sou especialista em executar comandos no terminal - posso ajudar você a criar projetos, instalar dependências, rodar builds, gerenciar Git e GitHub, e muitas outras coisas relacionadas a desenvolvimento.
 
-Não identifiquei uma tarefa concreta para executar no terminal. Eu **planejo, executo comandos, analiso o resultado e me corrijo** até concluir o objetivo.
-
-### Exemplos do que você pode me pedir
-
-- Crie um projeto React chamado \`meu-app\` e instale o Tailwind
-- Verifique a versão do Node instalada
-- Liste os arquivos do diretório atual
-- Instale o Tailwind CSS no projeto
-- Rode o build e me diga se deu certo
-
-Seja específico sobre o que quer que eu faça e eu executo por você.`
+Se tiver uma tarefa específica em mente, seja o mais claro possível sobre o que você quer fazer e eu cuido da execução.`
 
 /** Eventos emitidos ao frontend para acompanhar a execução ao vivo. */
 export type AgentEvent =
