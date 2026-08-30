@@ -58,6 +58,8 @@
     "@cloudflare/workers-types": "^5.20260810.1",
     "@happyseeds/devtools": "0.1.0-preview.3",
     "@happyseeds/vite-config": "0.1.0-preview.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.0",
     "@tanstack/router-cli": "^1.132.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.2",
