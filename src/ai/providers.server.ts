@@ -1,21 +1,13 @@
 import "@tanstack/react-start/server-only"
 
-// Ambiente detectado
-const IS_CLOUDFLARE_WORKERS = typeof (globalThis as any).EdgeRuntime !== "undefined"
-const IS_NODE_JS = typeof process !== "undefined" && (process as any).versions?.node
-
 // Função para obter variáveis de ambiente de forma compatível
 function getEnvVar(key: string): string | undefined {
-  if (IS_CLOUDFLARE_WORKERS) {
-    try {
-      const { env } = require("cloudflare:workers")
-      return env[key as keyof Cloudflare.Env]
-    } catch {
-      return undefined
-    }
+  // Tentar process.env primeiro (Node.js, Railway)
+  if (typeof process !== "undefined" && process.env) {
+    return process.env[key]
   }
-  // Node.js
-  return process.env[key]
+  // Fallback para globalThis (pode ser necessário em alguns ambientes)
+  return (globalThis as any)[key]
 }
 
 /** Configuração de cada provedor de IA disponível na fila de fallback. */
