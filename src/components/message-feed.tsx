@@ -22,6 +22,7 @@ export interface ChatMessage {
 }
 
 const SUGGESTIONS = [
+  "Crie um repositório no GitHub e faça o primeiro commit",
   "Crie um projeto React chamado meu-app e instale o Tailwind",
   "Verifique a versão do Node instalada",
   "Liste os arquivos do diretório atual",

@@ -12,6 +12,18 @@ interface SimFile {
 let virtualFs: Record<string, SimFile> = {}
 let projectDir = "/home/you/dev"
 
+/**
+ * Estado do repositório Git simulado. Permite ao agente fazer o fluxo completo
+ * de GitHub: init/add/commit/push, clone, branch, remote e o GitHub CLI (gh).
+ */
+const gitState = {
+  initialized: false,
+  staged: [] as string[],
+  commits: 0,
+  remote: "" as string,
+  branch: "main",
+}
+
 function resetFs() {
   virtualFs = {
     "package.json": {
@@ -207,18 +219,216 @@ export async function executeCommand(command: string): Promise<string> {
     return `(arquivo ${arg} atualizado)`
   }
 
-  // Git simulado.
+  // Git / GitHub simulado — fluxo completo de desenvolvimento.
   if (cmd === "git") {
-    if (arg === "status")
-      return "On branch main\nnothing to commit, working tree clean"
-    if (arg === "init")
+    const sub = args[1]
+    const rest = args.slice(2).join(" ")
+    const g = gitState
+
+    if (sub === "init") {
+      g.initialized = true
+      g.branch = "main"
+      g.commits = 0
+      g.staged = []
       return `Initialized empty Git repository in ${projectDir}/.git/`
-    if (arg === "log")
-      return `commit bdcda48a (HEAD -> main)\nAuthor: you\nDate: Sat Aug 30 16:26:00 2026`
-    if (arg.startsWith("add")) return "(arquivos adicionados à staging)"
-    if (arg.startsWith("commit"))
-      return `[main ${(Math.random() * 1e7).toFixed(0)}] commit feito`
-    return `git: subcomando não reconhecido: ${arg || "(nenhum)"}`
+    }
+
+    if (sub === "clone") {
+      const url = args[2] ?? "https://github.com/you/repo.git"
+      const name =
+        url
+          .split("/")
+          .pop()
+          ?.replace(/\.git$/, "") ?? "repo"
+      g.initialized = true
+      g.remote = url
+      g.commits = 1
+      g.staged = []
+      projectDir += "/" + name
+      return [
+        `Cloning into '${name}'...`,
+        "remote: Enumerating objects: 12, done.",
+        "remote: Total 12 (delta 0), reused 12 (delta 0), pack-reused 12",
+        "Receiving objects: 100% (12/12), done.",
+        "Resolving deltas: 100% (6/6), done.",
+      ].join("\n")
+    }
+
+    if (sub === "status") {
+      if (!g.initialized)
+        return "fatal: not a git repository (ou qualquer dos diretórios parentes)"
+      const head = `On branch ${g.branch}`
+      if (g.staged.length > 0) {
+        const files = g.staged.map((f) => `  new file:   ${f}`).join("\n")
+        return (
+          head +
+          "\nChanges to be committed:\n" +
+          files +
+          "\n\n(working tree limpo)"
+        )
+      }
+      if (g.commits > 0)
+        return (
+          head +
+          `\nYour branch is up to date with 'origin/${g.branch}'.` +
+          "\nnothing to commit, working tree clean"
+        )
+      return (
+        head +
+        "\nNo commits yet\nnothing to commit (crie arquivos e use 'git add')"
+      )
+    }
+
+    if (sub === "add") {
+      if (!g.initialized) return "fatal: not a git repository"
+      const files = args.slice(2).filter((f) => f !== ".")
+      const all = files.some((f) => f === "-A" || f === "--all" || f === "-u")
+      if (all || files.length === 0) g.staged = Object.keys(virtualFs)
+      else for (const f of files) if (!g.staged.includes(f)) g.staged.push(f)
+      const target =
+        g.staged.length > 0 ? g.staged.join(", ") : "(nenhum arquivo)"
+      return `(arquivos adicionados à staging: ${target})`
+    }
+
+    if (sub === "commit" || sub === "-am" || sub === "-a") {
+      if (!g.initialized) return "fatal: not a git repository"
+      if (g.staged.length === 0) {
+        const am = sub === "-am" || sub === "-a"
+        if (am) g.staged = Object.keys(virtualFs)
+        else return "nothing to commit, working tree clean"
+      }
+      const msgMatch = rest.match(/-m\s+["']?([^"']+)["']?/)
+      const msg = msgMatch?.[1] ?? "wip"
+      const count = g.staged.length
+      g.commits++
+      g.staged = []
+      const hash = (Math.random() * 1e7).toFixed(0)
+      return (
+        `[${g.branch} ${hash}] ${msg}\n` +
+        ` ${count} file${count === 1 ? "" : "s"} changed, ${count} insertion${count === 1 ? "" : "s"}(+)`
+      )
+    }
+
+    if (sub === "log") {
+      if (!g.initialized) return "fatal: not a git repository"
+      if (g.commits === 0)
+        return `fatal: your current branch '${g.branch}' does not have any commits yet`
+      const hash = (Math.random() * 1e7).toFixed(0)
+      return (
+        `commit ${hash} (HEAD -> ${g.branch})\n` +
+        "Author: you <you@example.com>\n" +
+        `Date:   ${new Date().toString()}`
+      )
+    }
+
+    if (sub === "branch") {
+      if (!g.initialized) return "fatal: not a git repository"
+      if (args[2]) {
+        g.branch = args[2]
+        return `(branch '${g.branch}' criado a partir de 'main')`
+      }
+      return `* ${g.branch}`
+    }
+
+    if (sub === "remote") {
+      if (args[2] === "add") {
+        const url = args[args.length - 1] || "https://github.com/you/repo.git"
+        g.remote = url
+        return `(origin adicionado: ${g.remote})`
+      }
+      if (args[2] === "-v" || args[2] === "--verbose") {
+        return g.remote
+          ? `origin  ${g.remote} (fetch)\norigin  ${g.remote} (push)`
+          : "(nenhum remote configurado)"
+      }
+      return g.remote || "(nenhum remote configurado)"
+    }
+
+    if (sub === "push") {
+      if (!g.initialized) return "fatal: not a git repository"
+      if (!g.remote) return "fatal: remote origin not found"
+      if (g.commits === 0) return "Everything up-to-date"
+      return (
+        "Enumerating objects: 5, done.\n" +
+        "Counting objects: 100% (5/5), done.\n" +
+        "Writing objects: 100% (5/5), 1.50 KiB | 1.50 MiB/s, done.\n" +
+        `Total 5 (delta 0), reused 0 (delta 0), pack-reused 0\n` +
+        `To ${g.remote}\n` +
+        `   * [new branch]      ${g.branch} -> ${g.branch}\n` +
+        `Branch '${g.branch}' set up to track 'origin/${g.branch}'.`
+      )
+    }
+
+    if (sub === "pull") return "Already up to date."
+
+    if (sub === "config") {
+      if (args.includes("user.name")) return "you"
+      if (args.includes("user.email")) return "you@example.com"
+      return "(configuração do git lida)"
+    }
+
+    return `git: subcomando não reconhecido: ${sub || "(nenhum)"}`
+  }
+
+  // GitHub CLI (gh): repositórios, PRs e issues.
+  if (cmd === "gh") {
+    const sub = args[1]
+
+    if (sub === "auth") {
+      if (args[2] === "status")
+        return "Logged in to github.com account you\n- Token: ghp_********************\n- Git protocol: https"
+      if (args[2] === "login")
+        return "✓ Logged in as you\n- Token: stored in keyring"
+      return "gh: subcomando de autenticação não reconhecido"
+    }
+
+    if (sub === "repo") {
+      if (args[2] === "create") {
+        const name = args[3] ?? "meu-app"
+        return (
+          `✓ Created repository ${name} on GitHub\n` +
+          `https://github.com/you/${name}\n` +
+          `✓ Added remote https://github.com/you/${name}.git`
+        )
+      }
+      if (args[2] === "list")
+        return "you/meu-app\nyou/agente-terminal\nyou/portfolio\n(mostrando 3 repos)"
+      if (args[2] === "view")
+        return (
+          `you/${args[3] ?? "meu-app"}\n` +
+          "Descrição do repositório.\n" +
+          "Stars: 12  Forks: 3  Language: TypeScript"
+        )
+      if (args[2] === "delete")
+        return `✓ Deleted repository ${args[3] ?? "meu-app"}`
+      return "gh repo: subcomando não reconhecido"
+    }
+
+    if (sub === "pr") {
+      if (args[2] === "create")
+        return "https://github.com/you/meu-app/pull/1\n✓ Pull request criado"
+      if (args[2] === "list")
+        return (
+          "Showing 2 of 2 open pull requests in you/meu-app\n" +
+          "#2  feat: adiciona autenticação  (feat-auth)\n" +
+          "#1  fix: corrige bug no build      (fix-build)"
+        )
+      if (args[2] === "merge") return `✓ Pull request #${args[3] ?? "1"} merged`
+      if (args[2] === "checkout")
+        return `✓ Switched to branch ${args[3] ?? "main"}`
+      return "gh pr: subcomando não reconhecido"
+    }
+
+    if (sub === "issue" && args[2] === "list")
+      return (
+        "Showing 2 open issues in you/meu-app\n" +
+        "#4  Erro ao salvar  (bug)\n" +
+        "#3  Melhorar docs    (docs)"
+      )
+
+    if (sub === "--version") return "gh version 2.45.0 (2026-08-01)"
+
+    return `gh: subcomando não reconhecido: ${sub || "(nenhum)"}`
   }
 
   // Utilitários comuns de verificação de ambiente.

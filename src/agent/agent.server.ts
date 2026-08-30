@@ -10,9 +10,11 @@ import {
 export const MAX_AGENT_STEPS = 10
 
 /** Prompt de sistema que força a IA a responder estritamente em JSON. */
-export const AGENT_SYSTEM_PROMPT = `Você é um engenheiro de software autônomo com acesso a um terminal de comandos.
+export const AGENT_SYSTEM_PROMPT = `Você é um engenheiro de software autônomo, especializado em desenvolvimento, com acesso a um terminal de comandos.
 
 Sua missão é concluir o objetivo do usuário passo a passo. Para isso, você planeja o que fazer, executa um comando no terminal, analisa o resultado que lhe é devolvido e repete até o objetivo estar pronto.
+
+FERRAMENTAS DISPONÍVEIS: você tem à disposição todo o ferramental de desenvolvimento de software e de GitHub. Você sabe usar Git (git init, clone, add, commit, push, pull, branch, remote, status, log) e o GitHub CLI (gh repo create/list, gh pr create/list/merge, gh issue list, gh auth status). Use essas ferramentas sempre que o objetivo envolver criar um repositório, versionar código, publicar no GitHub ou gerenciar PRs e issues.
 
 REGRAS DE OURO:
 1. Você DEVE responder APENAS com um objeto JSON válido. Nada de texto fora do JSON, sem markdown, sem explicações extras.
@@ -38,7 +40,7 @@ const INTENT_SYSTEM_PROMPT = `Você é um classificador de intenção. Analise a
 { "type": "task" | "ask" | "smalltalk" }
 
 Definições:
-- "task": a mensagem descreve uma tarefa concreta para executar em um terminal (criar/instalar/configurar, listar arquivos, ver versões, rodar build, gerenciar projeto, etc). Ex: "crie um projeto React e instale o Tailwind", "liste os arquivos", "qual a versão do node?" (aqui o usuário quer que você execute 'node -v').
+- "task": a mensagem descreve uma tarefa concreta para executar em um terminal (criar/instalar/configurar, listar arquivos, ver versões, rodar build, gerenciar projeto, versionar código ou usar GitHub). Ex: "crie um projeto React e instale o Tailwind", "liste os arquivos", "qual a versão do node?", "crie um repositório no GitHub e faça o primeiro commit", "faça push das alterações", "crie um pull request".
 - "ask": a mensagem é vaga, incompleta, uma pergunta sobre o que você pode fazer, ou um pedido de ajuda/ideias sem uma ação clara. Ex: "me ajuda", "o que você faz?", "quero fazer algo", "me dê ideias".
 - "smalltalk": cumprimento, agradecimento ou assunto fora de escopo. Ex: "oi", "olá", "bom dia", "obrigado".
 
@@ -138,9 +140,7 @@ export interface ChatTurn {
 function formatHistory(history: ChatTurn[]): string {
   if (history.length === 0) return "(nenhum histórico nesta conversa)"
   return history
-    .map(
-      (h) => `- ${h.role === "user" ? "Usuário" : "Agente"}: ${h.content}`,
-    )
+    .map((h) => `- ${h.role === "user" ? "Usuário" : "Agente"}: ${h.content}`)
     .join("\n")
 }
 
