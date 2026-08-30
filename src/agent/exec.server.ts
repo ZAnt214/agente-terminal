@@ -1,4 +1,5 @@
 import "@tanstack/react-start/server-only"
+import { validateCommand, logCommandExecution, getSafeEnv } from "./security"
 
 // Detecta o ambiente de execução
 const IS_CLOUDFLARE_WORKERS = typeof (globalThis as any).EdgeRuntime !== "undefined"
@@ -71,8 +72,19 @@ resetFs()
  * Em Node.js local: usa child_process.spawn() real com timeouts e isolamento
  * Em Cloudflare Workers: usa shell de demonstração determinístico
  * Em ambientes desconhecidos: fallback para shell simulado
+ *
+ * SEGURANÇA: Valida o comando antes de executar
  */
 export async function executeCommand(command: string): Promise<string> {
+  // Validar segurança
+  const validation = validateCommand(command)
+  if (!validation.ok) {
+    logCommandExecution(command, "blocked")
+    return `✕ Segurança: ${validation.reason}`
+  }
+
+  logCommandExecution(command, "allowed")
+
   // Se em Node.js e spawn está disponível: executar de verdade
   if (spawn) {
     return executeRealCommand(command)
@@ -84,6 +96,7 @@ export async function executeCommand(command: string): Promise<string> {
 
 /**
  * Executa comando real usando child_process.spawn (apenas Node.js)
+ * Com isolamento de ambiente e timeouts
  */
 async function executeRealCommand(command: string): Promise<string> {
   return new Promise((resolve) => {
@@ -92,6 +105,7 @@ async function executeRealCommand(command: string): Promise<string> {
         cwd: process.cwd(),
         timeout: 30000, // 30 segundos máximo
         stdio: ["pipe", "pipe", "pipe"],
+        env: getSafeEnv(), // Ambiente isolado
       })
 
       let stdout = ""
