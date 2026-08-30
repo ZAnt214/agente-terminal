@@ -143,6 +143,23 @@ function Home() {
     setChatRunning(true)
     currentStepRef.current = null
 
+    // Reúne os turnos anteriores da conversa como contexto para o agente,
+    // para que ele responda perguntas sobre o que já foi feito.
+    const prior: { role: "user" | "assistant"; content: string }[] = []
+    const currentSession = sessions.find((s) => s.id === sessId)
+    if (currentSession) {
+      for (const m of currentSession.messages) {
+        if (m.role === "user") {
+          prior.push({ role: "user", content: m.content })
+        } else if (m.role === "assistant" && m.status !== "running") {
+          prior.push({
+            role: "assistant",
+            content: m.content || "(sem resumo)",
+          })
+        }
+      }
+    }
+
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -150,7 +167,7 @@ function Home() {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal: prompt }),
+        body: JSON.stringify({ goal: prompt, history: prior }),
         signal: controller.signal,
       })
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)

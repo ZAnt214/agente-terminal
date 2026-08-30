@@ -1,13 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router"
 import "@tanstack/react-start"
-import { runAgentLoop, type AgentEvent } from "#/agent/agent.server.ts"
+import {
+  runAgentLoop,
+  type AgentEvent,
+  type ChatTurn,
+} from "#/agent/agent.server.ts"
 
 export const Route = createFileRoute("/api/agent")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const body = (await request.json()) as { goal?: string }
+        const body = (await request.json()) as {
+          goal?: string
+          history?: ChatTurn[]
+        }
         const goal = (body.goal ?? "").trim()
+        const history = Array.isArray(body.history) ? body.history : []
 
         if (!goal) {
           return Response.json(
@@ -26,7 +34,7 @@ export const Route = createFileRoute("/api/agent")({
               )
             }
             try {
-              await runAgentLoop(goal, emit)
+              await runAgentLoop(goal, emit, history)
             } catch (error) {
               emit({
                 type: "error",

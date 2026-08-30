@@ -51,16 +51,24 @@ Responda apenas o JSON, sem texto extra.`
 /** Prompt para gerar a resposta amigável quando a mensagem não é uma tarefa. */
 const CONVERSATION_PROMPT = `Você é o "dev·console agent", uma IA que planeja, executa comandos em um terminal, analisa os resultados e se corrige até concluir uma tarefa.
 
-A mensagem do usuário NÃO é uma tarefa concreta para executar no terminal. Responda de forma curta, amigável e em português, em Markdown, seguindo esta estrutura:
-1. Cumprimente ou reconheça a mensagem do usuário (em 1 linha).
-2. Em 1-2 linhas, explique brevemente o que você faz (planejo, executo comandos, analiso resultados e me corrijo até concluir).
+Você receberá o HISTÓRICO da conversa atual e a MENSAGEM mais recente do usuário.
+
+SE A MENSAGEM SE REFERE AO QUE JÁ FOI FEITO NESTA CONVERSA (por exemplo: "você fez algo?", "o que você fez?", "o que já foi feito?", "deu certo?", "qual o resultado?"), responda DIRETAMENTE com base no histórico:
+1. Reconheça a pergunta em 1 linha.
+2. Resuma especificamente o que foi feito nesta conversa, citando as ações e comandos reais do histórico. Se nada tiver sido feito, diga isso com clareza.
+3. NÃO liste exemplos genéricos de capacidades nem repita opções de tarefas.
+
+SE A MENSAGEM NÃO TIVER RELAÇÃO COM O HISTÓRICO (é sobre o que você pode fazer, pedido de ajuda, ou ideias), responda de forma amigável:
+1. Cumprimente ou reconheça a mensagem (em 1 linha).
+2. Explique brevemente o que você faz (planejo, executo comandos, analiso resultados e me corrijo até concluir).
 3. Liste 3-5 exemplos de objetivos concretos que o usuário pode me pedir, como lista com marcadores.
 4. Convide o usuário a ser específico sobre o que deseja.
 
 Regras:
+- Responda em português, em Markdown, de forma curta.
 - NÃO use comandos de terminal no texto.
-- NÃO invente capacidades fora do escopo de um terminal/agente de desenvolvimento.
-- Use apenas texto; os cabeçalhos podem usar # para organização.`
+- NÃO invente ações que não constam no histórico.
+- NÃO invente capacidades fora do escopo de um terminal/agente de desenvolvimento.`
 
 /** Resposta padrão usada se a geração por IA falhar. */
 const FALLBACK_REPLY = `## Olá! Eu sou o dev·console agent
@@ -120,17 +128,37 @@ function parseAgentAction(raw: string): AgentAction | null {
 
 type Intent = "task" | "ask" | "smalltalk"
 
+/** Uma troca (turno) anterior da conversa, usada como contexto para o agente. */
+export interface ChatTurn {
+  role: "user" | "assistant"
+  content: string
+}
+
+/** Formata os turnos anteriores como texto legível para a IA. */
+function formatHistory(history: ChatTurn[]): string {
+  if (history.length === 0) return "(nenhum histórico nesta conversa)"
+  return history
+    .map(
+      (h) => `- ${h.role === "user" ? "Usuário" : "Agente"}: ${h.content}`,
+    )
+    .join("\n")
+}
+
 /**
  * Classifica a intenção da mensagem do usuário. Se a classificação falhar,
  * assume "task" (mantém o comportamento atual de executar).
  */
-async function classifyIntent(userGoal: string): Promise<Intent> {
-  const history: AIMessage[] = [
+async function classifyIntent(
+  userGoal: string,
+  history: ChatTurn[] = [],
+): Promise<Intent> {
+  const msgs: AIMessage[] = [
     { role: "system", content: INTENT_SYSTEM_PROMPT },
+    ...history.map((h) => ({ role: h.role, content: h.content })),
     { role: "user", content: userGoal },
   ]
   try {
-    const answer = await askAIWithFallback(history, 0)
+    const answer = await askAIWithFallback(msgs, 0)
     if (!answer.ok) return "task"
     const cleaned = answer.text
       .trim()
@@ -145,13 +173,19 @@ async function classifyIntent(userGoal: string): Promise<Intent> {
 }
 
 /** Gera uma resposta amigável (com sugestões) quando a mensagem não é uma tarefa. */
-async function respondConversational(userGoal: string): Promise<string> {
-  const history: AIMessage[] = [
+async function respondConversational(
+  userGoal: string,
+  history: ChatTurn[] = [],
+): Promise<string> {
+  const msgs: AIMessage[] = [
     { role: "system", content: CONVERSATION_PROMPT },
-    { role: "user", content: `Mensagem do usuário: ${userGoal}` },
+    {
+      role: "user",
+      content: `HISTÓRICO DA CONVERSA:\n${formatHistory(history)}\n\nMensagem do usuário: ${userGoal}`,
+    },
   ]
   try {
-    const answer = await askAIWithFallback(history, 0)
+    const answer = await askAIWithFallback(msgs, 0)
     if (answer.ok && answer.text.trim()) return answer.text.trim()
   } catch {
     // usa o fallback abaixo
@@ -171,17 +205,19 @@ async function respondConversational(userGoal: string): Promise<string> {
 export async function runAgentLoop(
   userGoal: string,
   emit: (event: AgentEvent) => void,
+  prior: ChatTurn[] = [],
 ): Promise<void> {
   const history: AIMessage[] = [
     { role: "system", content: AGENT_SYSTEM_PROMPT },
+    ...prior.map((h) => ({ role: h.role, content: h.content })),
     { role: "user", content: `Objetivo do usuário: ${userGoal}` },
   ]
 
   // Se a mensagem não é uma tarefa concreta (pergunta, cumprimento, vaga),
   // respondemos de forma conversacional, sem executar comandos sem sentido.
-  const intent = await classifyIntent(userGoal)
+  const intent = await classifyIntent(userGoal, prior)
   if (intent === "ask" || intent === "smalltalk") {
-    const reply = await respondConversational(userGoal)
+    const reply = await respondConversational(userGoal, prior)
     emit({ type: "done", summary: reply })
     return
   }
