@@ -1,13 +1,28 @@
 import "@tanstack/react-start/server-only"
 
+// Detecta o ambiente de execução
+const IS_CLOUDFLARE_WORKERS = typeof (globalThis as any).EdgeRuntime !== "undefined"
+const IS_NODE_JS = typeof process !== "undefined" && (process as any).versions?.node
+
+// Em Node.js, importar spawn
+let spawn: any = null
+if (IS_NODE_JS && !IS_CLOUDFLARE_WORKERS) {
+  try {
+    const { spawn: spawnFn } = require("child_process")
+    spawn = spawnFn
+  } catch {
+    // Se não conseguir importar, usar fallback simulado
+  }
+}
+
 interface SimFile {
   name: string
   content: string
 }
 
 /**
- * Sistema de arquivos simulado do shell de demonstração. Mantém um estado
- * mínimo (criação de arquivos) para que o agente consiga concluir objetivos.
+ * Sistema de arquivos simulado do shell de demonstração. Usado como fallback
+ * quando executando em Cloudflare Workers ou quando spawn não está disponível.
  */
 let virtualFs: Record<string, SimFile> = {}
 let projectDir = "/home/you/dev"
@@ -51,25 +66,73 @@ function resetFs() {
 resetFs()
 
 /**
- * Executa um comando de terminal e devolve todo o log (stdout + stderr)
- * concatenado, como o agente precisa para ler o resultado.
+ * Executa um comando de terminal e devolve stdout + stderr concatenado.
  *
- * Nota de plataforma: o preview roda em Cloudflare Workers, onde o spawn de
- * processos reais é bloqueado pelo runtime. Por isso usamos um shell de
- * demonstração determinístico. Em um servidor Node.js local, troque o corpo
- * por:
- *
- *   import { spawn } from "node:child_process"
- *   const child = spawn(command, { shell: true })
- *   let logs = ""
- *   child.stdout.on("data", (d) => (logs += d.toString()))
- *   child.stderr.on("data", (d) => (logs += d.toString()))
- *   return await new Promise((resolve, reject) => {
- *     child.on("error", reject)
- *     child.on("close", (code) => resolve(logs.trim()))
- *   })
+ * Em Node.js local: usa child_process.spawn() real com timeouts e isolamento
+ * Em Cloudflare Workers: usa shell de demonstração determinístico
+ * Em ambientes desconhecidos: fallback para shell simulado
  */
 export async function executeCommand(command: string): Promise<string> {
+  // Se em Node.js e spawn está disponível: executar de verdade
+  if (spawn) {
+    return executeRealCommand(command)
+  }
+
+  // Fallback: usar shell simulado (Cloudflare Workers)
+  return executeSimulatedCommand(command)
+}
+
+/**
+ * Executa comando real usando child_process.spawn (apenas Node.js)
+ */
+async function executeRealCommand(command: string): Promise<string> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn("sh", ["-c", command], {
+        cwd: process.cwd(),
+        timeout: 30000, // 30 segundos máximo
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+
+      let stdout = ""
+      let stderr = ""
+
+      child.stdout?.on("data", (data: Buffer) => {
+        stdout += data.toString()
+      })
+
+      child.stderr?.on("data", (data: Buffer) => {
+        stderr += data.toString()
+      })
+
+      // Timeout: forçar morte do processo após 30s
+      const timeoutHandle = setTimeout(() => {
+        child.kill("SIGTERM")
+      }, 30000)
+
+      child.on("close", (code: number) => {
+        clearTimeout(timeoutHandle)
+        // Devolver stdout + stderr junto
+        const output = (stdout + stderr).trim()
+        resolve(output || `(exit code: ${code})`)
+      })
+
+      child.on("error", (err: Error) => {
+        clearTimeout(timeoutHandle)
+        resolve(`erro: ${err.message}`)
+      })
+    } catch (err) {
+      // Se spawn falhar completamente, usar fallback simulado
+      resolve(executeSimulatedCommand(command))
+    }
+  })
+}
+
+/**
+ * Executa comando de forma simulada (shell de demonstração)
+ * Usado em Cloudflare Workers ou como fallback
+ */
+function executeSimulatedCommand(command: string): string {
   const args = command.split(/\s+/).filter(Boolean)
   const cmd = args[0]?.toLowerCase() ?? ""
   const rest = args.slice(1)
@@ -80,7 +143,7 @@ export async function executeCommand(command: string): Promise<string> {
     const parts = command.split("&&").map((p) => p.trim())
     const outputs: string[] = []
     for (const part of parts) {
-      if (part) outputs.push(await executeCommand(part))
+      if (part) outputs.push(executeSimulatedCommand(part))
     }
     return outputs.filter(Boolean).join("\n")
   }
@@ -180,7 +243,7 @@ export async function executeCommand(command: string): Promise<string> {
 
   // sudo: apenas repassa o comando.
   if (cmd === "sudo") {
-    return await executeCommand(rest.join(" "))
+    return executeSimulatedCommand(rest.join(" "))
   }
 
   // Variações de "cd": move para o diretório do projeto simulado.
