@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import "@tanstack/react-start"
+import { eq } from "drizzle-orm"
 import {
   runAgentLoop,
   type AgentEvent,
@@ -91,24 +92,24 @@ export const Route = createFileRoute("/api/agent")({
                 await db
                   .update(schema.steps)
                   .set({ command: event.command ?? "" })
-                  .where((steps: any) => steps.id === currentStepId)
+                  .where(eq(schema.steps.id, currentStepId))
               } else if (event.type === "log" && currentStepId) {
-                const step = (await db.query.steps.findFirst({
-                  where: (steps: any) => steps.id === currentStepId,
-                })) as any
+                const step = await db.query.steps.findFirst({
+                  where: eq(schema.steps.id, currentStepId),
+                })
 
                 if (step) {
                   await db
                     .update(schema.steps)
                     .set({ logs: step.logs + (event.text ?? "") })
-                    .where((steps: any) => steps.id === currentStepId)
+                    .where(eq(schema.steps.id, currentStepId))
                 }
               } else if (event.type === "done" && messageId) {
                 if (currentStepId) {
                   await db
                     .update(schema.steps)
                     .set({ running: 0 })
-                    .where((steps: any) => steps.id === currentStepId)
+                    .where(eq(schema.steps.id, currentStepId))
                 }
 
                 await db
@@ -117,20 +118,20 @@ export const Route = createFileRoute("/api/agent")({
                     content: event.summary ?? "Objetivo concluído.",
                     status: "done",
                   })
-                  .where((messages: any) => messages.id === messageId)
+                  .where(eq(schema.messages.id, messageId))
 
                 if (sessionId) {
                   await db
                     .update(schema.sessions)
                     .set({ updatedAt: Date.now() })
-                    .where((sessions: any) => sessions.id === sessionId)
+                    .where(eq(schema.sessions.id, sessionId))
                 }
               } else if (event.type === "error" && messageId) {
                 if (currentStepId) {
                   await db
                     .update(schema.steps)
                     .set({ running: 0 })
-                    .where((steps: any) => steps.id === currentStepId)
+                    .where(eq(schema.steps.id, currentStepId))
                 }
 
                 await db
@@ -139,13 +140,13 @@ export const Route = createFileRoute("/api/agent")({
                     content: event.message ?? "Erro ao executar.",
                     status: "error",
                   })
-                  .where((messages: any) => messages.id === messageId)
+                  .where(eq(schema.messages.id, messageId))
 
                 if (sessionId) {
                   await db
                     .update(schema.sessions)
                     .set({ updatedAt: Date.now() })
-                    .where((sessions: any) => sessions.id === sessionId)
+                    .where(eq(schema.sessions.id, sessionId))
                 }
               }
             }

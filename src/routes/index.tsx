@@ -214,25 +214,8 @@ function Home() {
   // Garanta que existe uma conversa ativa, criando uma se necessário.
   const ensureSession = async (): Promise<number> => {
     if (activeId != null) return activeId
-    try {
-      const res = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "" }),
-      })
-      if (!res.ok) throw new Error("Failed to create session")
-      const session = (await res.json()) as { id: number; title: string }
-      setSessions((prev) => [
-        { id: session.id, title: session.title, ts: "agora", messages: [] },
-        ...prev,
-      ])
-      setActiveId(session.id)
-      if (session.id >= nextSess.current) {
-        nextSess.current = session.id + 1
-      }
-      return session.id
-    } catch {
-      // Fallback: create in memory
+
+    const fallback = () => {
       const id = nextSess.current++
       setSessions((prev) => [
         { id, title: "", ts: "agora", messages: [] },
@@ -241,6 +224,30 @@ function Home() {
       setActiveId(id)
       return id
     }
+
+    const res = await fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "" }),
+    }).catch(() => null)
+
+    if (!res || !res.ok) return fallback()
+
+    const session = (await res.json().catch(() => null)) as {
+      id: number
+      title: string
+    } | null
+    if (!session) return fallback()
+
+    setSessions((prev) => [
+      { id: session.id, title: session.title, ts: "agora", messages: [] },
+      ...prev,
+    ])
+    setActiveId(session.id)
+    if (session.id >= nextSess.current) {
+      nextSess.current = session.id + 1
+    }
+    return session.id
   }
 
   const deleteSession = (id: number) => {
