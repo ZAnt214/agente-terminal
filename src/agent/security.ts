@@ -23,8 +23,9 @@ try {
  * Padrão case-insensitive
  */
 const BLOCKED_COMMANDS = [
-  // Destruição de dados
-  /^\s*(sudo\s+)?rm\s+(-rf|-r|-f|--recursive|--force)/i,
+  // Destruição de dados (rm -rf/-r/-f tem checagem própria em isDangerousRm,
+  // já que um bloqueio total impediria o agente de limpar a própria área de
+  // trabalho isolada — ex: apagar um ".netlify" ou "node_modules" velho)
   /^\s*(sudo\s+)?mkfs/i,
   /^\s*(sudo\s+)?dd\s+/i,
   /^\s*(sudo\s+)?fdisk\s+/i,
@@ -64,6 +65,32 @@ const BLOCKED_COMMANDS = [
 ]
 
 /**
+ * Alvos considerados perigosos para "rm -r"/"rm -f" (raiz do sistema, HOME,
+ * diretório da própria aplicação, ou "sobe" para fora da área de trabalho).
+ * Um "rm -rf" apontando para um caminho relativo comum (".netlify",
+ * "node_modules", "dist", um nome de projeto) é permitido — é rotina em
+ * fluxos de build/deploy e roda isolado em SAFE_BASE_DIR.
+ */
+function isDangerousRm(trimmed: string): boolean {
+  const match = trimmed.match(/^(?:sudo\s+)?rm\s+(.+)$/i)
+  if (!match) return false
+
+  const tokens = match[1].split(/\s+/).filter(Boolean)
+  const hasForceOrRecursive = tokens.some(
+    (t) => /^-[a-z]*[rf][a-z]*$/i.test(t) || t === "--recursive" || t === "--force",
+  )
+  if (!hasForceOrRecursive) return false
+
+  const targets = tokens.filter((t) => !t.startsWith("-"))
+  if (targets.length === 0) return true // "rm -rf" sem alvo explícito é suspeito
+
+  const dangerousExact = new Set(["/", "~", "$HOME", "*", ".", ".."])
+  return targets.some(
+    (t) => dangerousExact.has(t) || t.startsWith("/") || t.startsWith("~"),
+  )
+}
+
+/**
  * Validar se um comando é seguro para executar
  * Retorna { ok: true } se seguro, ou { ok: false, reason: "..." } se bloqueado
  */
@@ -75,6 +102,13 @@ export function validateCommand(command: string): {
 
   if (!trimmed) {
     return { ok: false, reason: "Comando vazio" }
+  }
+
+  if (isDangerousRm(trimmed)) {
+    return {
+      ok: false,
+      reason: `Comando bloqueado: "rm" recursivo/forçado com alvo fora da área de trabalho isolada do agente ("${command.slice(0, 50)}")`,
+    }
   }
 
   // Verificar contra lista de bloqueios
