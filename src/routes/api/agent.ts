@@ -33,7 +33,18 @@ export const Route = createFileRoute("/api/agent")({
         let stepNum = 0
         let currentStepId: number | null = null
 
+        // Se o cliente desconectar (fechar a aba, dar refresh, abortar) antes
+        // do agente terminar, o controller do stream já estará fechado —
+        // enqueue()/close() nele lançam "Invalid state" e, como isso acontece
+        // dentro de um callback assíncrono do ReadableStream, o erro escapa
+        // como exceção não tratada e derruba o processo inteiro. streamClosed
+        // evita tentar mexer no controller depois de fechado.
+        let streamClosed = false
+
         const stream = new ReadableStream<Uint8Array>({
+          cancel() {
+            streamClosed = true
+          },
           async start(controller) {
             const db = await getDb()
 
@@ -66,9 +77,16 @@ export const Route = createFileRoute("/api/agent")({
             }
 
             const emit = async (event: AgentEvent) => {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
-              )
+              if (!streamClosed) {
+                try {
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+                  )
+                } catch {
+                  // Cliente já desconectou entre a checagem e o enqueue — ok, ignora.
+                  streamClosed = true
+                }
+              }
 
               // Salvar events no banco
               if (!db || !messageId) return
@@ -154,12 +172,18 @@ export const Route = createFileRoute("/api/agent")({
             try {
               await runAgentLoop(goal, emit, history)
             } catch (error) {
-              emit({
+              await emit({
                 type: "error",
                 message: (error as Error).message ?? String(error),
               })
             } finally {
-              controller.close()
+              if (!streamClosed) {
+                try {
+                  controller.close()
+                } catch {
+                  // Stream já fechado pelo cliente — ok, ignora.
+                }
+              }
             }
           },
         })

@@ -41,13 +41,32 @@ export const Route = createFileRoute("/api/exec")({
         const isError = looksLikeError(text)
         const encoder = new TextEncoder()
 
+        // Se o cliente desconectar no meio do streaming (fechar aba, refresh,
+        // abortar), o controller já estará fechado — enqueue()/close() nele
+        // lançam "Invalid state" e, por acontecer dentro do callback
+        // assíncrono do ReadableStream, isso escapa como exceção não tratada
+        // e derruba o processo inteiro. streamClosed evita isso.
+        let streamClosed = false
+
         const stream = new ReadableStream<Uint8Array>({
+          cancel() {
+            streamClosed = true
+          },
           async start(controller) {
+            const safeEnqueue = (chunk: Uint8Array) => {
+              if (streamClosed) return
+              try {
+                controller.enqueue(chunk)
+              } catch {
+                streamClosed = true
+              }
+            }
+
             if (text) {
               const streamKind = isError ? "stderr" : "stdout"
               for (const line of text.split("\n")) {
-                if (!line) continue
-                controller.enqueue(
+                if (!line || streamClosed) continue
+                safeEnqueue(
                   encoder.encode(
                     `data: ${JSON.stringify({ stream: streamKind, text: line + "\n" })}\n\n`,
                   ),
@@ -56,12 +75,18 @@ export const Route = createFileRoute("/api/exec")({
                 await new Promise((r) => setTimeout(r, 30))
               }
             }
-            controller.enqueue(
+            safeEnqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ stream: "exit", code: isError ? 1 : 0 })}\n\n`,
               ),
             )
-            controller.close()
+            if (!streamClosed) {
+              try {
+                controller.close()
+              } catch {
+                // Stream já fechado pelo cliente — ok, ignora.
+              }
+            }
           },
         })
 
