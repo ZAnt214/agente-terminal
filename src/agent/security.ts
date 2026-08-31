@@ -176,5 +176,34 @@ export function getSafeEnv(): Record<string, string> {
     env.GH_TOKEN = process.env.GITHUB_TOKEN
   }
 
+  // Tokens de outras plataformas de deploy/integrações: repassados só se
+  // existirem no ambiente do servidor (configurados pelo usuário no Railway).
+  // Nunca aparecem no prompt da IA — ela só vê o resultado dos comandos.
+  // Cada CLI lê sua variável nativamente em modo não-interativo (sem precisar
+  // de "login" via navegador, que não funciona neste container headless).
+  const PASSTHROUGH_TOKEN_VARS = [
+    "NETLIFY_AUTH_TOKEN",
+    "NETLIFY_SITE_ID",
+    "VERCEL_TOKEN",
+    "VERCEL_ORG_ID",
+    "VERCEL_PROJECT_ID",
+    "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "HEROKU_API_KEY",
+    "FLY_API_TOKEN",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_REGION",
+    "NPM_TOKEN",
+    "DOCKER_USERNAME",
+    "DOCKER_PASSWORD",
+    "SUPABASE_ACCESS_TOKEN",
+    "RAILWAY_TOKEN",
+  ]
+  for (const key of PASSTHROUGH_TOKEN_VARS) {
+    const value = process.env[key]
+    if (value) env[key] = value
+  }
+
   return env
 }
