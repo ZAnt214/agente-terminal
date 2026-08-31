@@ -73,6 +73,8 @@ function Home() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [view, setView] = useState<"chat" | "shell">("chat")
   const [chatInput, setChatInput] = useState("")
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState("")
 
   // Shell (modo terminal)
   const [shellLines, setShellLines] = useState<ShellLine[]>([])
@@ -254,6 +256,39 @@ function Home() {
     setSessions((prev) => prev.filter((s) => s.id !== id))
     if (activeId === id)
       setActiveId(sessions.find((s) => s.id !== id)?.id ?? null)
+  }
+
+  // Sobe o servidor de desenvolvimento do projeto atual do agente e abre o
+  // site rodando em uma aba nova.
+  const runPreview = async () => {
+    if (previewLoading) return
+    setPreviewLoading(true)
+    setPreviewError("")
+
+    const res = await fetch("/api/preview-start", { method: "POST" }).catch(
+      (e) => e as Error,
+    )
+
+    if (res instanceof Error) {
+      setPreviewError(String(res))
+      setPreviewLoading(false)
+      return
+    }
+
+    const data = (await res.json().catch(() => null)) as {
+      ok?: boolean
+      url?: string
+      error?: string
+    } | null
+
+    if (!res.ok || !data?.ok || !data.url) {
+      setPreviewError(data?.error || `Falha ao iniciar o preview (HTTP ${res.status})`)
+      setPreviewLoading(false)
+      return
+    }
+
+    window.open(data.url, "_blank", "noopener,noreferrer")
+    setPreviewLoading(false)
   }
 
   const sendGoal = async (raw: string) => {
@@ -643,6 +678,21 @@ function Home() {
 
             <button
               type="button"
+              onClick={() => void runPreview()}
+              disabled={previewLoading}
+              className="rounded-xl p-2 text-zinc-300 transition-colors hover:bg-white/5 hover:text-zinc-50 disabled:opacity-40"
+              title="Executar projeto e abrir em uma aba nova"
+              aria-label="Executar preview ao vivo"
+            >
+              {previewLoading ? (
+                <RotateCw className="size-5 animate-spin" />
+              ) : (
+                <Play className="size-5" />
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={() => setHistoryOpen(true)}
               className="rounded-xl p-2 text-zinc-300 transition-colors hover:bg-white/5 hover:text-zinc-50"
               title="Histórico"
@@ -651,6 +701,20 @@ function Home() {
               <History className="size-5" />
             </button>
           </div>
+
+          {previewError && (
+            <div className="mx-3 mt-2 flex items-start gap-2 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-[12px] leading-relaxed text-rose-200">
+              <span className="min-w-0 flex-1">{previewError}</span>
+              <button
+                type="button"
+                onClick={() => setPreviewError("")}
+                className="shrink-0 text-rose-300/70 hover:text-rose-100"
+                aria-label="Fechar aviso"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* Alternância Chat / Shell */}
           <nav

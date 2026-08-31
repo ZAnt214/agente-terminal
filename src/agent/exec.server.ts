@@ -144,6 +144,11 @@ async function ensureGitAuthConfigured(): Promise<void> {
 // todo "cd" seria esquecido assim que o comando terminasse.
 let currentDir = getSafeBaseDir()
 
+/** Diretório de trabalho atual do agente (para o preview ao vivo usar o mesmo projeto). */
+export function getCurrentDir(): string {
+  return currentDir
+}
+
 // Marcador usado para capturar o diretório final após cada comando (via
 // `pwd`), sem depender de parsing frágil de "cd" no texto do comando.
 const CWD_MARKER = "__AGENT_CWD__:"

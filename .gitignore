@@ -56,6 +56,9 @@ uploads/
 tmp/
 temp/
 
+# Área de trabalho isolada do agente (projetos clonados/criados em runtime)
+/projects/
+
 # Pacote de download do código-fonte (gerado no preview, não vai ao repositório)
 public/agente-terminal.zip
 

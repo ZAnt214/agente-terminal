@@ -13,7 +13,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as ApiExecRouteImport } from './routes/api/exec'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiPreviewStartRouteImport } from './routes/api/preview-start'
 import { Route as ApiSessionsRouteImport } from './routes/api/sessions'
+import { Route as PreviewSplatRouteImport } from './routes/preview.$'
 import { Route as ApiSessionsIdRouteImport } from './routes/api/sessions.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -36,9 +38,19 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPreviewStartRoute = ApiPreviewStartRouteImport.update({
+  id: '/api/preview-start',
+  path: '/api/preview-start',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSessionsRoute = ApiSessionsRouteImport.update({
   id: '/api/sessions',
   path: '/api/sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PreviewSplatRoute = PreviewSplatRouteImport.update({
+  id: '/preview/$',
+  path: '/preview/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSessionsIdRoute = ApiSessionsIdRouteImport.update({
@@ -52,7 +64,9 @@ export interface FileRoutesByFullPath {
   '/api/agent': typeof ApiAgentRoute
   '/api/exec': typeof ApiExecRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/preview-start': typeof ApiPreviewStartRoute
   '/api/sessions': typeof ApiSessionsRouteWithChildren
+  '/preview/$': typeof PreviewSplatRoute
   '/api/sessions/$id': typeof ApiSessionsIdRoute
 }
 export interface FileRoutesByTo {
@@ -60,7 +74,9 @@ export interface FileRoutesByTo {
   '/api/agent': typeof ApiAgentRoute
   '/api/exec': typeof ApiExecRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/preview-start': typeof ApiPreviewStartRoute
   '/api/sessions': typeof ApiSessionsRouteWithChildren
+  '/preview/$': typeof PreviewSplatRoute
   '/api/sessions/$id': typeof ApiSessionsIdRoute
 }
 export interface FileRoutesById {
@@ -69,7 +85,9 @@ export interface FileRoutesById {
   '/api/agent': typeof ApiAgentRoute
   '/api/exec': typeof ApiExecRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/preview-start': typeof ApiPreviewStartRoute
   '/api/sessions': typeof ApiSessionsRouteWithChildren
+  '/preview/$': typeof PreviewSplatRoute
   '/api/sessions/$id': typeof ApiSessionsIdRoute
 }
 export interface FileRouteTypes {
@@ -79,7 +97,9 @@ export interface FileRouteTypes {
     | '/api/agent'
     | '/api/exec'
     | '/api/health'
+    | '/api/preview-start'
     | '/api/sessions'
+    | '/preview/$'
     | '/api/sessions/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -87,7 +107,9 @@ export interface FileRouteTypes {
     | '/api/agent'
     | '/api/exec'
     | '/api/health'
+    | '/api/preview-start'
     | '/api/sessions'
+    | '/preview/$'
     | '/api/sessions/$id'
   id:
     | '__root__'
@@ -95,7 +117,9 @@ export interface FileRouteTypes {
     | '/api/agent'
     | '/api/exec'
     | '/api/health'
+    | '/api/preview-start'
     | '/api/sessions'
+    | '/preview/$'
     | '/api/sessions/$id'
   fileRoutesById: FileRoutesById
 }
@@ -104,7 +128,9 @@ export interface RootRouteChildren {
   ApiAgentRoute: typeof ApiAgentRoute
   ApiExecRoute: typeof ApiExecRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiPreviewStartRoute: typeof ApiPreviewStartRoute
   ApiSessionsRoute: typeof ApiSessionsRouteWithChildren
+  PreviewSplatRoute: typeof PreviewSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -137,11 +163,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/preview-start': {
+      id: '/api/preview-start'
+      path: '/api/preview-start'
+      fullPath: '/api/preview-start'
+      preLoaderRoute: typeof ApiPreviewStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/sessions': {
       id: '/api/sessions'
       path: '/api/sessions'
       fullPath: '/api/sessions'
       preLoaderRoute: typeof ApiSessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/preview/$': {
+      id: '/preview/$'
+      path: '/preview/$'
+      fullPath: '/preview/$'
+      preLoaderRoute: typeof PreviewSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/sessions/$id': {
@@ -171,7 +211,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentRoute: ApiAgentRoute,
   ApiExecRoute: ApiExecRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiPreviewStartRoute: ApiPreviewStartRoute,
   ApiSessionsRoute: ApiSessionsRouteWithChildren,
+  PreviewSplatRoute: PreviewSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
