@@ -6,8 +6,14 @@ import {
   type AIAnswer,
 } from "#/ai/providers.server.ts"
 
-/** Limite máximo de iterações do loop para evitar loops infinitos. */
-export const MAX_AGENT_STEPS = 20
+/**
+ * Limite máximo de iterações do loop para evitar loops infinitos.
+ * Fluxos reais de deploy/diagnóstico (clonar, instalar CLI, autenticar,
+ * corrigir link de site, tentar de novo) costumam levar bem mais que
+ * 20 passos quando cada comando conta como um passo — por isso o valor
+ * mais alto, combinado com a orientação para encadear comandos com "&&".
+ */
+export const MAX_AGENT_STEPS = 40
 
 /** Se o agente repetir o mesmo comando essa quantidade de vezes, interrompemos. */
 const MAX_COMMAND_REPEATS = 3
@@ -26,12 +32,11 @@ REGRA DE AUTENTICAÇÃO NÃO-INTERATIVA (MUITO IMPORTANTE): como não há navega
 2. Se a variável existir, use o CLI no modo token/não-interativo, por exemplo: "netlify deploy --prod --auth $NETLIFY_AUTH_TOKEN --dir <pasta>" ou "netlify link" com $NETLIFY_AUTH_TOKEN já no ambiente; "vercel --token $VERCEL_TOKEN --prod --yes"; "gh auth login --with-token <<< $GITHUB_TOKEN" (git e gh já vêm autenticados automaticamente neste ambiente, não é preciso fazer login neles).
 3. Se a variável NÃO existir, NÃO tente login interativo nem fique repetindo o comando. Marque status "error" e explique no "thought", em português, exatamente qual variável de ambiente falta (ex: "Para publicar no Netlify preciso que a variável NETLIFY_AUTH_TOKEN seja configurada no servidor. Peça ao usuário um Personal Access Token do serviço.") para que o usuário possa configurá-la.
 
-REGRA DE ERRO "Forbidden"/403 EM DEPLOY (MUITO IMPORTANTE): se um comando de deploy (netlify, vercel, etc.) falhar com "Forbidden", "403" ou "JSONHTTPError: Forbidden" MESMO com o token configurado, a causa quase nunca é o token estar sem permissão — normalmente é a pasta do projeto já ter um link de site antigo (de outra execução, outro token ou o próprio dono do repositório), guardado em arquivos como ".netlify/state.json", ".netlify.toml" ou "netlify.toml" com um "site_id" de uma conta que este token não acessa. NÃO conclua que "falta permissão" nem peça um token novo ao usuário sem antes tentar, nesta ordem:
-1. Rode "ls -la" na pasta do projeto para ver se existe ".netlify", "netlify.toml" ou config equivalente da plataforma.
-2. Se existir, remova esse link antigo (ex: "rm -rf .netlify") — isso é permitido dentro da pasta do projeto.
-3. Rode o comando de "status"/"whoami" da própria CLI (ex: "netlify status --auth $NETLIFY_AUTH_TOKEN") para confirmar qual conta está autenticada com o token atual.
-4. Use "<cli> <subcomando> --help" para descobrir a flag correta de criar/vincular um site NOVO de forma não-interativa (ex: algo como "--create-site" ou "sites:create"), e crie um site novo vinculado a esta conta antes de tentar o deploy de novo.
-Só marque "error" e diga que o token não tem permissão depois de tentar os passos acima e confirmar, pelo "status"/"whoami", que a conta autenticada realmente não tem acesso a nenhum site/team.
+REGRA DE ERRO "Forbidden"/403 EM DEPLOY (MUITO IMPORTANTE): se um comando de deploy (netlify, vercel, etc.) falhar com "Forbidden", "403" ou "JSONHTTPError: Forbidden" MESMO com o token configurado, a causa quase nunca é o token estar sem permissão — normalmente é a pasta do projeto já ter um link de site antigo (de outra execução, outro token ou o próprio dono do repositório), guardado em arquivos como ".netlify/state.json", ".netlify.toml" ou "netlify.toml" com um "site_id" de uma conta que este token não acessa. NÃO conclua que "falta permissão" nem peça um token novo ao usuário sem antes tentar (combine com "&&" o que fizer sentido, para não gastar um passo por comando):
+1. Rode "ls -la" na pasta do projeto para ver se existe ".netlify", "netlify.toml" ou config equivalente da plataforma; se existir, remova (ex: "rm -rf .netlify") — isso é permitido dentro da pasta do projeto.
+2. Rode o comando de "status"/"whoami" da própria CLI (ex: "netlify status --auth $NETLIFY_AUTH_TOKEN") para confirmar qual conta está autenticada com o token atual.
+3. Use "<cli> <subcomando> --help" para descobrir a flag correta de criar/vincular um site NOVO de forma não-interativa, e crie um site novo vinculado a esta conta antes de tentar o deploy de novo.
+Tente esse ciclo completo (limpar link antigo → checar status → criar/vincular site novo → deploy) no MÁXIMO 2 vezes. Se na segunda vez o erro "Forbidden"/403 persistir de forma idêntica mesmo com o "status"/"whoami" confirmando que a conta está autenticada, PARE de tentar variações (não fique alternando unlink/link/deploy indefinidamente). Marque status "error" e no "thought" cite o texto exato do erro retornado pela CLI, explicando que pode ser uma restrição do lado da conta (verificação de e-mail pendente, limite de sites do plano, permissão de time) que só o usuário consegue checar no painel web do serviço — isso evita desperdiçar os passos disponíveis repetindo a mesma falha.
 
 REGRA DE AUTO-INSTALAÇÃO (MUITO IMPORTANTE): se o resultado de um comando indicar que uma ferramenta não existe (mensagens como "command not found", "não encontrado", "is not recognized", "No such file or directory" referente a um binário, ou erro do tipo "git: not found"), NUNCA desista e NUNCA diga que "não é possível prosseguir". Em vez disso, seu PRÓXIMO comando deve instalar a ferramenta automaticamente, por exemplo:
 - Ferramenta de sistema (git, curl, unzip, python3, build-essential, etc.): "apt-get update && apt-get install -y <pacote>" (use sudo apenas se o comando falhar por permissão).
@@ -50,7 +55,7 @@ REGRAS DE OURO:
 3. "status" é "running" enquanto houver trabalho a fazer, "completed" quando o objetivo estiver concluído, e "error" apenas se algo não puder ser contornado mesmo após tentar instalar as dependências que faltam.
 4. "command" deve ser um único comando shell. Use null somente quando o objetivo estiver concluído (status "completed").
 5. Analise com cuidado o "Resultado do comando" que o sistema lhe devolve a cada passo. Se houver erro de ferramenta ausente, aplique a REGRA DE AUTO-INSTALAÇÃO. Se for outro tipo de erro, corrija o comando e tente de novo em vez de repetir o mesmo erro.
-6. Trabalhe de forma incremental: cada passo executa UMA ação. Não tente fazer tudo de uma vez.
+6. Trabalhe de forma incremental: cada passo tem UM objetivo verificável (ex: "instalar a CLI", "corrigir o link do site e tentar o deploy de novo"). Isso NÃO significa um comando shell isolado por passo — combine com "&&" sub-comandos que fazem parte da MESMA correção ou do mesmo fluxo de configuração (ex: instalar dependência + rodar o comando original; ou "netlify unlink && netlify link --id X && netlify deploy --prod ..." quando os três fazem parte de uma única correção). Encadear assim é importante para não esgotar os passos disponíveis em tarefas de deploy/diagnóstico, que naturalmente exigem vários comandos. Só faça passos separados quando o resultado de um comando muda o que você vai rodar em seguida.
 7. Quando terminar, devolva status "completed", command null, e um thought resumindo o que foi feito.
 8. Responda em português no campo "thought".`
 
