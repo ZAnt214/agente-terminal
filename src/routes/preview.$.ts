@@ -15,6 +15,9 @@ import { getPreviewPort } from "#/agent/preview.server.ts"
  */
 async function proxyToPreview(request: Request): Promise<Response> {
   const port = getPreviewPort()
+  console.log(
+    `[PREVIEW PROXY] ${request.method} ${new URL(request.url).pathname} -> port=${port ?? "none"}`,
+  )
   if (!port) {
     return new Response(
       "Nenhum preview ativo no momento. Clique em ▶ (play) na conversa para iniciar o servidor de desenvolvimento do projeto.",

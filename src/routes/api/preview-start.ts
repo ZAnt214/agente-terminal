@@ -13,7 +13,9 @@ export const Route = createFileRoute("/api/preview-start")({
     handlers: {
       POST: async () => {
         const dir = getCurrentDir()
+        console.log(`[PREVIEW START] dir=${dir}`)
         const result = await startPreview(dir)
+        console.log(`[PREVIEW START] result=${JSON.stringify(result)}`)
 
         if (!result.ok) {
           return Response.json(
