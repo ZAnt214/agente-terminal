@@ -167,11 +167,17 @@ async function executeRealCommand(command: string): Promise<string> {
 
   return new Promise((resolve) => {
     try {
+      // "detached" cria um novo grupo de processos: matar só o "sh" de topo
+      // (PID do child) não mata os processos que ele gera (ex: "npm run dev"
+      // → node → vite → workers do esbuild). Guardando o grupo, dá pra matar
+      // a árvore inteira com kill(-pid) — essencial pro timeout realmente
+      // encerrar um servidor de dev que a IA tenha iniciado por engano,
+      // em vez de deixar o passo pendurado pra sempre.
       const child = spawn("sh", ["-c", wrapped], {
         cwd: currentDir,
-        timeout: COMMAND_TIMEOUT_MS,
         stdio: ["pipe", "pipe", "pipe"],
         env: getSafeEnv(), // Ambiente isolado
+        detached: true,
       })
 
       let stdout = ""
@@ -185,13 +191,26 @@ async function executeRealCommand(command: string): Promise<string> {
         stderr += data.toString()
       })
 
-      // Timeout: forçar morte do processo caso passe do limite
+      const killGroup = (signal: NodeJS.Signals) => {
+        if (child.pid == null) return
+        try {
+          process.kill(-child.pid, signal)
+        } catch {
+          // Grupo já pode não existir mais (processo já encerrou)
+        }
+      }
+
+      // Timeout: mata o grupo inteiro de processos, com SIGKILL de reforço
+      // caso o processo ignore o SIGTERM (comum em alguns dev servers).
+      let killHandle: ReturnType<typeof setTimeout> | null = null
       const timeoutHandle = setTimeout(() => {
-        child.kill("SIGTERM")
+        killGroup("SIGTERM")
+        killHandle = setTimeout(() => killGroup("SIGKILL"), 3000)
       }, COMMAND_TIMEOUT_MS)
 
       child.on("close", (code: number) => {
         clearTimeout(timeoutHandle)
+        if (killHandle) clearTimeout(killHandle)
 
         // Extrai o marcador de cwd (sempre no stdout, escrito por printf)
         // e atualiza o diretório de trabalho para o próximo comando.
@@ -211,6 +230,7 @@ async function executeRealCommand(command: string): Promise<string> {
 
       child.on("error", (err: Error) => {
         clearTimeout(timeoutHandle)
+        if (killHandle) clearTimeout(killHandle)
         resolve(`erro: ${err.message}`)
       })
     } catch {
